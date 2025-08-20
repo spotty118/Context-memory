@@ -22,13 +22,17 @@ def create_engine():
     global engine
     
     if engine is None:
+        db_url = settings.DATABASE_URL
+        if db_url.startswith("postgresql://"):
+            async_url = db_url.replace("postgresql://", "postgresql+asyncpg://", 1)
+        else:
+            async_url = db_url
         engine = create_async_engine(
-            settings.DATABASE_URL,
+            async_url,
             pool_size=settings.DATABASE_POOL_SIZE,
             max_overflow=settings.DATABASE_MAX_OVERFLOW,
             pool_pre_ping=True,
             echo=settings.is_development and settings.DEBUG,
-            # Use NullPool for serverless environments if needed
             poolclass=NullPool if settings.ENVIRONMENT == "serverless" else None,
         )
         

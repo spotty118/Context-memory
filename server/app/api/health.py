@@ -3,7 +3,7 @@ Health check endpoints for monitoring and observability.
 """
 import time
 from typing import Dict, Any
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Response
 from sqlalchemy import text
 import structlog
 import redis.asyncio as redis
@@ -11,6 +11,7 @@ import redis.asyncio as redis
 from app.core.config import settings
 from app.db.session import get_db_dependency
 from app.core.ratelimit import get_redis
+from app.telemetry.otel import get_metrics
 
 router = APIRouter()
 logger = structlog.get_logger(__name__)
@@ -121,17 +122,6 @@ async def metrics_endpoint():
     if not settings.METRICS_ENABLED:
         raise HTTPException(status_code=404, detail="Metrics disabled")
     
-    # This would be implemented with prometheus_client
-    # For now, return a simple response
-    metrics_data = """
-# HELP context_memory_gateway_info Service information
-# TYPE context_memory_gateway_info gauge
-context_memory_gateway_info{version="1.0.0",environment="%s"} 1
-
-# HELP context_memory_gateway_uptime_seconds Service uptime in seconds
-# TYPE context_memory_gateway_uptime_seconds counter
-context_memory_gateway_uptime_seconds %d
-""" % (settings.ENVIRONMENT, int(time.time()))
-    
-    return metrics_data
+    metrics_data = get_metrics()
+    return Response(content=metrics_data, media_type="text/plain; version=0.0.4; charset=utf-8")
 
