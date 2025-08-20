@@ -143,7 +143,7 @@ class ContextExtractor:
         
         return items
     
-    def extract_episodic_items(self, content: str, thread_id: str, source: str = None) -> List[Dict[str, Any]]:
+    def extract_episodic_items(self, content: str, thread_id: str, source: Optional[str] = None) -> List[Dict[str, Any]]:
         """Extract episodic items (events, logs, etc.) from content."""
         items = []
         lines = content.split('\n')

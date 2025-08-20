@@ -3,7 +3,7 @@ OpenRouter service for proxying requests to OpenRouter API.
 """
 import json
 import asyncio
-from typing import Dict, Any, AsyncGenerator, Optional
+from typing import Dict, Any, AsyncGenerator, Optional, List
 from fastapi import Request
 import httpx
 from tenacity import retry, stop_after_attempt, wait_exponential, retry_if_exception_type
@@ -268,12 +268,20 @@ async def proxy_chat_completion(
     
     response_data = response.json()
     
+    req_model = request_body.get("model")
+    model_id: str = (
+        str(req_model) if req_model is not None
+        else api_key.default_model
+        or settings.OPENROUTER_DEFAULT_MODEL
+        or "unknown"
+    )
+    
     # Record usage
     if "usage" in response_data:
         usage_info = response_data["usage"]
         await record_usage(
             api_key=api_key,
-            model_id=request_body.get("model"),
+            model_id=model_id,
             prompt_tokens=usage_info.get("prompt_tokens", 0),
             completion_tokens=usage_info.get("completion_tokens", 0)
         )
@@ -281,7 +289,7 @@ async def proxy_chat_completion(
         logger.info(
             "chat_completion_usage_recorded",
             workspace_id=api_key.workspace_id,
-            model=request_body.get("model"),
+            model=model_id,
             prompt_tokens=usage_info.get("prompt_tokens", 0),
             completion_tokens=usage_info.get("completion_tokens", 0),
             total_tokens=usage_info.get("total_tokens", 0),
@@ -321,19 +329,27 @@ async def proxy_embeddings(
     
     response_data = response.json()
     
+    req_model = request_body.get("model")
+    model_id: str = (
+        str(req_model) if req_model is not None
+        else api_key.default_model
+        or settings.OPENROUTER_DEFAULT_MODEL
+        or "unknown"
+    )
+    
     # Record usage for embeddings
     if "usage" in response_data:
         usage_info = response_data["usage"]
         await record_usage(
             api_key=api_key,
-            model_id=request_body.get("model"),
+            model_id=model_id,
             embedding_tokens=usage_info.get("total_tokens", 0)
         )
         
         logger.info(
             "embeddings_usage_recorded",
             workspace_id=api_key.workspace_id,
-            model=request_body.get("model"),
+            model=model_id,
             tokens=usage_info.get("total_tokens", 0),
         )
     

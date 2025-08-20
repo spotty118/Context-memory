@@ -3,7 +3,7 @@ Structured logging configuration using structlog.
 """
 import logging
 import sys
-from typing import Any, Dict
+from typing import Any, Dict, Optional
 import structlog
 from structlog.types import EventDict
 
@@ -115,7 +115,7 @@ def setup_logging() -> None:
         logging.getLogger("sqlalchemy.engine").setLevel(logging.INFO)
 
 
-def get_logger(name: str = None) -> structlog.BoundLogger:
+def get_logger(name: Optional[str] = None) -> structlog.BoundLogger:
     """Get a structured logger instance."""
     return structlog.get_logger(name)
 
