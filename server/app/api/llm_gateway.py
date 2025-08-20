@@ -186,21 +186,21 @@ async def chat_completions(
         raise HTTPException(status_code=400, detail=error)
     
     request_body["model"] = resolved_model
-     
-     model_id = resolved_model or settings.OPENROUTER_DEFAULT_MODEL or "unknown"
-     
-     # Handle idempotency for non-streaming requests
-     idempotency_key = request.headers.get("idempotency-key")
-     if idempotency_key and not request_body.get("stream", False):
-         cached_response = await check_idempotency(idempotency_key, api_key, request_body, db)
-         if cached_response:
-             return cached_response
-     
-     # Log request (with sensitive data redacted)
-     if settings.DEBUG_LOG_PROMPTS:
-         logger.info("chat_request_received", request_body=request_body)
-     else:
-         logger.info("chat_request_received", request_body=redact_sensitive_data(request_body))
+    
+    model_id = resolved_model or settings.OPENROUTER_DEFAULT_MODEL or "unknown"
+    
+    # Handle idempotency for non-streaming requests
+    idempotency_key = request.headers.get("idempotency-key")
+    if idempotency_key and not request_body.get("stream", False):
+        cached_response = await check_idempotency(idempotency_key, api_key, request_body, db)
+        if cached_response:
+            return cached_response
+    
+    # Log request (with sensitive data redacted)
+    if settings.DEBUG_LOG_PROMPTS:
+        logger.info("chat_request_received", request_body=request_body)
+    else:
+        logger.info("chat_request_received", request_body=redact_sensitive_data(request_body))
     
     try:
         if request_body.get("stream", False):
@@ -311,18 +311,17 @@ async def embeddings(
         raise HTTPException(status_code=400, detail=error)
     
     request_body["model"] = resolved_model
-     
+    
     model_id = resolved_model or settings.OPENROUTER_DEFAULT_MODEL or "unknown"
-     
-     # Log request
-     logger.info(
-         "embeddings_request_received",
-         workspace_id=api_key.workspace_id,
-         model=model_id,
+    
+    # Log request
+    logger.info(
+        "embeddings_request_received",
+        workspace_id=api_key.workspace_id,
+        model=model_id,
         input_type=type(request_body.get("input")).__name__,
         input_length=len(request_body.get("input", [])) if isinstance(request_body.get("input"), list) else 1
     )
-    
     try:
         if settings.EMBEDDINGS_PROVIDER == "openrouter":
             # Proxy to OpenRouter
