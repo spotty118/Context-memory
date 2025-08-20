@@ -1,0 +1,337 @@
+{% extends "base.html" %}
+
+{% block title %}Dashboard - Context Memory Gateway{% endblock %}
+{% block page_title %}Dashboard{% endblock %}
+
+{% block content %}
+<div class="fade-in">
+    <!-- Stats Overview -->
+    <div class="grid grid-cols-1 gap-6 sm:grid-cols-2 lg:grid-cols-4 mb-8">
+        <div class="bg-white overflow-hidden shadow rounded-lg card-hover">
+            <div class="p-5">
+                <div class="flex items-center">
+                    <div class="flex-shrink-0">
+                        <div class="w-8 h-8 bg-blue-500 rounded-md flex items-center justify-center">
+                            <i data-lucide="zap" class="w-4 h-4 text-white"></i>
+                        </div>
+                    </div>
+                    <div class="ml-5 w-0 flex-1">
+                        <dl>
+                            <dt class="text-sm font-medium text-gray-500 truncate">Total Requests</dt>
+                            <dd class="text-lg font-medium text-gray-900">{{ stats.total_requests | default('12,847') }}</dd>
+                        </dl>
+                    </div>
+                </div>
+                <div class="mt-3">
+                    <div class="flex items-center text-sm text-green-600">
+                        <i data-lucide="trending-up" class="w-4 h-4 mr-1"></i>
+                        <span>+12% from last month</span>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <div class="bg-white overflow-hidden shadow rounded-lg card-hover">
+            <div class="p-5">
+                <div class="flex items-center">
+                    <div class="flex-shrink-0">
+                        <div class="w-8 h-8 bg-green-500 rounded-md flex items-center justify-center">
+                            <i data-lucide="users" class="w-4 h-4 text-white"></i>
+                        </div>
+                    </div>
+                    <div class="ml-5 w-0 flex-1">
+                        <dl>
+                            <dt class="text-sm font-medium text-gray-500 truncate">Active API Keys</dt>
+                            <dd class="text-lg font-medium text-gray-900">{{ stats.active_keys | default('24') }}</dd>
+                        </dl>
+                    </div>
+                </div>
+                <div class="mt-3">
+                    <div class="flex items-center text-sm text-green-600">
+                        <i data-lucide="plus-circle" class="w-4 h-4 mr-1"></i>
+                        <span>3 new this week</span>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <div class="bg-white overflow-hidden shadow rounded-lg card-hover">
+            <div class="p-5">
+                <div class="flex items-center">
+                    <div class="flex-shrink-0">
+                        <div class="w-8 h-8 bg-purple-500 rounded-md flex items-center justify-center">
+                            <i data-lucide="database" class="w-4 h-4 text-white"></i>
+                        </div>
+                    </div>
+                    <div class="ml-5 w-0 flex-1">
+                        <dl>
+                            <dt class="text-sm font-medium text-gray-500 truncate">Context Items</dt>
+                            <dd class="text-lg font-medium text-gray-900">{{ stats.context_items | default('1,847') }}</dd>
+                        </dl>
+                    </div>
+                </div>
+                <div class="mt-3">
+                    <div class="flex items-center text-sm text-blue-600">
+                        <i data-lucide="brain" class="w-4 h-4 mr-1"></i>
+                        <span>{{ stats.semantic_items | default('892') }} semantic, {{ stats.episodic_items | default('955') }} episodic</span>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <div class="bg-white overflow-hidden shadow rounded-lg card-hover">
+            <div class="p-5">
+                <div class="flex items-center">
+                    <div class="flex-shrink-0">
+                        <div class="w-8 h-8 bg-orange-500 rounded-md flex items-center justify-center">
+                            <i data-lucide="activity" class="w-4 h-4 text-white"></i>
+                        </div>
+                    </div>
+                    <div class="ml-5 w-0 flex-1">
+                        <dl>
+                            <dt class="text-sm font-medium text-gray-500 truncate">Avg Response Time</dt>
+                            <dd class="text-lg font-medium text-gray-900">{{ stats.avg_response_time | default('245ms') }}</dd>
+                        </dl>
+                    </div>
+                </div>
+                <div class="mt-3">
+                    <div class="flex items-center text-sm text-green-600">
+                        <i data-lucide="trending-down" class="w-4 h-4 mr-1"></i>
+                        <span>-8ms from yesterday</span>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Charts Row -->
+    <div class="grid grid-cols-1 lg:grid-cols-2 gap-6 mb-8">
+        <!-- Request Volume Chart -->
+        <div class="bg-white shadow rounded-lg p-6">
+            <div class="flex items-center justify-between mb-4">
+                <h3 class="text-lg font-medium text-gray-900">Request Volume</h3>
+                <div class="flex items-center space-x-2">
+                    <button class="text-sm text-gray-500 hover:text-gray-700 px-2 py-1 rounded" onclick="updateChart('24h')">24h</button>
+                    <button class="text-sm text-gray-500 hover:text-gray-700 px-2 py-1 rounded bg-gray-100" onclick="updateChart('7d')">7d</button>
+                    <button class="text-sm text-gray-500 hover:text-gray-700 px-2 py-1 rounded" onclick="updateChart('30d')">30d</button>
+                </div>
+            </div>
+            <div class="h-64">
+                <canvas id="requestChart"></canvas>
+            </div>
+        </div>
+
+        <!-- Model Usage Chart -->
+        <div class="bg-white shadow rounded-lg p-6">
+            <div class="flex items-center justify-between mb-4">
+                <h3 class="text-lg font-medium text-gray-900">Model Usage</h3>
+                <i data-lucide="pie-chart" class="w-5 h-5 text-gray-400"></i>
+            </div>
+            <div class="h-64">
+                <canvas id="modelChart"></canvas>
+            </div>
+        </div>
+    </div>
+
+    <!-- Recent Activity & System Status -->
+    <div class="grid grid-cols-1 lg:grid-cols-3 gap-6">
+        <!-- Recent Activity -->
+        <div class="lg:col-span-2 bg-white shadow rounded-lg">
+            <div class="px-6 py-4 border-b border-gray-200">
+                <h3 class="text-lg font-medium text-gray-900">Recent Activity</h3>
+            </div>
+            <div class="divide-y divide-gray-200">
+                {% for activity in recent_activities | default([
+                    {'type': 'api_key', 'message': 'New API key created for workspace "Production"', 'time': '2 minutes ago', 'icon': 'key', 'color': 'green'},
+                    {'type': 'context', 'message': 'Context ingestion completed for thread "chat-session-123"', 'time': '5 minutes ago', 'icon': 'database', 'color': 'blue'},
+                    {'type': 'model', 'message': 'Model catalog synchronized from OpenRouter', 'time': '15 minutes ago', 'icon': 'refresh-cw', 'color': 'purple'},
+                    {'type': 'usage', 'message': 'API key "prod-key-001" exceeded 80% of quota', 'time': '1 hour ago', 'icon': 'alert-triangle', 'color': 'orange'},
+                    {'type': 'system', 'message': 'Background worker completed embedding generation', 'time': '2 hours ago', 'icon': 'cpu', 'color': 'gray'}
+                ]) %}
+                <div class="px-6 py-4 flex items-center space-x-3">
+                    <div class="flex-shrink-0">
+                        <div class="w-8 h-8 bg-{{ activity.color }}-100 rounded-full flex items-center justify-center">
+                            <i data-lucide="{{ activity.icon }}" class="w-4 h-4 text-{{ activity.color }}-600"></i>
+                        </div>
+                    </div>
+                    <div class="flex-1 min-w-0">
+                        <p class="text-sm text-gray-900">{{ activity.message }}</p>
+                        <p class="text-sm text-gray-500">{{ activity.time }}</p>
+                    </div>
+                </div>
+                {% endfor %}
+            </div>
+            <div class="px-6 py-3 bg-gray-50">
+                <a href="/admin/activity" class="text-sm text-indigo-600 hover:text-indigo-500 font-medium">
+                    View all activity →
+                </a>
+            </div>
+        </div>
+
+        <!-- System Status -->
+        <div class="bg-white shadow rounded-lg">
+            <div class="px-6 py-4 border-b border-gray-200">
+                <h3 class="text-lg font-medium text-gray-900">System Status</h3>
+            </div>
+            <div class="p-6 space-y-4">
+                <!-- API Gateway -->
+                <div class="flex items-center justify-between">
+                    <div class="flex items-center space-x-3">
+                        <div class="w-2 h-2 bg-green-400 rounded-full"></div>
+                        <span class="text-sm text-gray-900">API Gateway</span>
+                    </div>
+                    <span class="text-sm text-green-600 font-medium">Healthy</span>
+                </div>
+
+                <!-- Database -->
+                <div class="flex items-center justify-between">
+                    <div class="flex items-center space-x-3">
+                        <div class="w-2 h-2 bg-green-400 rounded-full"></div>
+                        <span class="text-sm text-gray-900">PostgreSQL</span>
+                    </div>
+                    <span class="text-sm text-green-600 font-medium">Connected</span>
+                </div>
+
+                <!-- Redis -->
+                <div class="flex items-center justify-between">
+                    <div class="flex items-center space-x-3">
+                        <div class="w-2 h-2 bg-green-400 rounded-full"></div>
+                        <span class="text-sm text-gray-900">Redis Cache</span>
+                    </div>
+                    <span class="text-sm text-green-600 font-medium">Online</span>
+                </div>
+
+                <!-- OpenRouter -->
+                <div class="flex items-center justify-between">
+                    <div class="flex items-center space-x-3">
+                        <div class="w-2 h-2 bg-green-400 rounded-full"></div>
+                        <span class="text-sm text-gray-900">OpenRouter</span>
+                    </div>
+                    <span class="text-sm text-green-600 font-medium">Available</span>
+                </div>
+
+                <!-- Background Workers -->
+                <div class="flex items-center justify-between">
+                    <div class="flex items-center space-x-3">
+                        <div class="w-2 h-2 bg-yellow-400 rounded-full"></div>
+                        <span class="text-sm text-gray-900">Workers</span>
+                    </div>
+                    <span class="text-sm text-yellow-600 font-medium">2/3 Active</span>
+                </div>
+
+                <!-- Storage -->
+                <div class="flex items-center justify-between">
+                    <div class="flex items-center space-x-3">
+                        <div class="w-2 h-2 bg-green-400 rounded-full"></div>
+                        <span class="text-sm text-gray-900">DO Spaces</span>
+                    </div>
+                    <span class="text-sm text-green-600 font-medium">Connected</span>
+                </div>
+            </div>
+            
+            <div class="px-6 py-3 bg-gray-50">
+                <button class="text-sm text-indigo-600 hover:text-indigo-500 font-medium" 
+                        hx-get="/admin/system-status" 
+                        hx-target="#system-status-detail"
+                        hx-trigger="click">
+                    View detailed status →
+                </button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Hidden div for detailed system status -->
+    <div id="system-status-detail"></div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+    // Initialize charts
+    document.addEventListener('DOMContentLoaded', function() {
+        initRequestChart();
+        initModelChart();
+    });
+
+    function initRequestChart() {
+        const ctx = document.getElementById('requestChart').getContext('2d');
+        new Chart(ctx, {
+            type: 'line',
+            data: {
+                labels: ['00:00', '04:00', '08:00', '12:00', '16:00', '20:00', '24:00'],
+                datasets: [{
+                    label: 'Requests',
+                    data: [120, 190, 300, 500, 420, 380, 290],
+                    borderColor: 'rgb(99, 102, 241)',
+                    backgroundColor: 'rgba(99, 102, 241, 0.1)',
+                    tension: 0.4,
+                    fill: true
+                }]
+            },
+            options: {
+                responsive: true,
+                maintainAspectRatio: false,
+                plugins: {
+                    legend: {
+                        display: false
+                    }
+                },
+                scales: {
+                    y: {
+                        beginAtZero: true,
+                        grid: {
+                            color: 'rgba(0, 0, 0, 0.05)'
+                        }
+                    },
+                    x: {
+                        grid: {
+                            display: false
+                        }
+                    }
+                }
+            }
+        });
+    }
+
+    function initModelChart() {
+        const ctx = document.getElementById('modelChart').getContext('2d');
+        new Chart(ctx, {
+            type: 'doughnut',
+            data: {
+                labels: ['GPT-4', 'Claude-3', 'Gemini Pro', 'GPT-3.5', 'Others'],
+                datasets: [{
+                    data: [35, 25, 20, 15, 5],
+                    backgroundColor: [
+                        '#8B5CF6',
+                        '#06B6D4',
+                        '#10B981',
+                        '#F59E0B',
+                        '#EF4444'
+                    ],
+                    borderWidth: 0
+                }]
+            },
+            options: {
+                responsive: true,
+                maintainAspectRatio: false,
+                plugins: {
+                    legend: {
+                        position: 'bottom',
+                        labels: {
+                            padding: 20,
+                            usePointStyle: true
+                        }
+                    }
+                }
+            }
+        });
+    }
+
+    function updateChart(period) {
+        // Update chart data based on period
+        console.log('Updating chart for period:', period);
+        // This would typically fetch new data from the API
+    }
+</script>
+{% endblock %}
+
