@@ -143,14 +143,15 @@ async def check_rpm(api_key: APIKey, requests: int = 1) -> None:
     Raises:
         HTTPException: If rate limit exceeded
     """
-    # Use per-key RPM limit or global default
-    rpm_limit = api_key.rpm_limit or settings.RATE_LIMIT_RPM
+    # Use per-key limit or global defaults
+    rpm_limit = api_key.rpm_limit or settings.RATE_LIMIT_REQUESTS
+    window_seconds = settings.RATE_LIMIT_WINDOW
     
     bucket = TokenBucket(
         key=f"rpm:{api_key.key_hash}",
         capacity=rpm_limit,
         refill_rate=rpm_limit,
-        window_seconds=60
+        window_seconds=window_seconds
     )
     
     allowed = await bucket.consume(requests)
@@ -197,8 +198,8 @@ async def check_rph(api_key: APIKey, requests: int = 1) -> None:
     Raises:
         HTTPException: If rate limit exceeded
     """
-    # Calculate hourly limit (RPM * 60)
-    rpm_limit = api_key.rpm_limit or settings.RATE_LIMIT_RPM
+    # Calculate hourly limit based on per-window RPM config
+    rpm_limit = api_key.rpm_limit or settings.RATE_LIMIT_REQUESTS
     rph_limit = rpm_limit * 60
     
     bucket = TokenBucket(
@@ -243,14 +244,14 @@ async def get_rate_limit_status(api_key: APIKey) -> dict:
     Returns:
         dict: Rate limit status information
     """
-    rpm_limit = api_key.rpm_limit or settings.RATE_LIMIT_RPM
+    rpm_limit = api_key.rpm_limit or settings.RATE_LIMIT_REQUESTS
     rph_limit = rpm_limit * 60
     
     rpm_bucket = TokenBucket(
         key=f"rpm:{api_key.key_hash}",
         capacity=rpm_limit,
         refill_rate=rpm_limit,
-        window_seconds=60
+        window_seconds=settings.RATE_LIMIT_WINDOW
     )
     
     rph_bucket = TokenBucket(

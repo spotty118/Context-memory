@@ -186,19 +186,21 @@ async def chat_completions(
         raise HTTPException(status_code=400, detail=error)
     
     request_body["model"] = resolved_model
-    
-    # Handle idempotency for non-streaming requests
-    idempotency_key = request.headers.get("idempotency-key")
-    if idempotency_key and not request_body.get("stream", False):
-        cached_response = await check_idempotency(idempotency_key, api_key, request_body, db)
-        if cached_response:
-            return cached_response
-    
-    # Log request (with sensitive data redacted)
-    if settings.DEBUG_LOG_PROMPTS:
-        logger.info("chat_request_received", request_body=request_body)
-    else:
-        logger.info("chat_request_received", request_body=redact_sensitive_data(request_body))
+     
+     model_id = resolved_model or settings.OPENROUTER_DEFAULT_MODEL or "unknown"
+     
+     # Handle idempotency for non-streaming requests
+     idempotency_key = request.headers.get("idempotency-key")
+     if idempotency_key and not request_body.get("stream", False):
+         cached_response = await check_idempotency(idempotency_key, api_key, request_body, db)
+         if cached_response:
+             return cached_response
+     
+     # Log request (with sensitive data redacted)
+     if settings.DEBUG_LOG_PROMPTS:
+         logger.info("chat_request_received", request_body=request_body)
+     else:
+         logger.info("chat_request_received", request_body=redact_sensitive_data(request_body))
     
     try:
         if request_body.get("stream", False):
@@ -213,12 +215,12 @@ async def chat_completions(
                 )
                 
                 return StreamingResponse(
-                    stream_and_meter_usage(or_request, api_key, resolved_model),
+                    stream_and_meter_usage(or_request, api_key, model_id),
                     media_type="text/event-stream",
                     headers={
                         "Cache-Control": "no-cache",
                         "Connection": "keep-alive",
-                        "X-Model-Used": resolved_model,
+                        "X-Model-Used": model_id,
                     }
                 )
         else:
@@ -233,7 +235,7 @@ async def chat_completions(
             
             # Add custom headers
             headers = {
-                "X-Model-Used": resolved_model,
+                "X-Model-Used": model_id,
             }
             
             return Response(
@@ -246,7 +248,7 @@ async def chat_completions(
         logger.error(
             "openrouter_proxy_error",
             workspace_id=api_key.workspace_id,
-            model=resolved_model,
+            model=model_id,
             status_code=e.status_code,
             message=e.message,
             details=e.details
@@ -266,7 +268,7 @@ async def chat_completions(
         logger.error(
             "chat_completion_error",
             workspace_id=api_key.workspace_id,
-            model=resolved_model,
+            model=model_id,
             error=str(e)
         )
         raise HTTPException(status_code=500, detail="Internal server error")
@@ -309,12 +311,14 @@ async def embeddings(
         raise HTTPException(status_code=400, detail=error)
     
     request_body["model"] = resolved_model
-    
-    # Log request
-    logger.info(
-        "embeddings_request_received",
-        workspace_id=api_key.workspace_id,
-        model=resolved_model,
+     
+    model_id = resolved_model or settings.OPENROUTER_DEFAULT_MODEL or "unknown"
+     
+     # Log request
+     logger.info(
+         "embeddings_request_received",
+         workspace_id=api_key.workspace_id,
+         model=model_id,
         input_type=type(request_body.get("input")).__name__,
         input_length=len(request_body.get("input", [])) if isinstance(request_body.get("input"), list) else 1
     )
@@ -327,7 +331,7 @@ async def embeddings(
             return Response(
                 content=json.dumps(response_data),
                 media_type="application/json",
-                headers={"X-Model-Used": resolved_model}
+                headers={"X-Model-Used": model_id}
             )
         else:
             # Use local SBERT (would be implemented here)
@@ -340,7 +344,7 @@ async def embeddings(
         logger.error(
             "embeddings_proxy_error",
             workspace_id=api_key.workspace_id,
-            model=resolved_model,
+            model=model_id,
             status_code=e.status_code,
             message=e.message
         )
@@ -358,7 +362,7 @@ async def embeddings(
         logger.error(
             "embeddings_error",
             workspace_id=api_key.workspace_id,
-            model=resolved_model,
+            model=model_id,
             error=str(e)
         )
         raise HTTPException(status_code=500, detail="Internal server error")
