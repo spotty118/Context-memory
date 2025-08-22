@@ -239,5 +239,6 @@ def get_settings():
     env_file = ".env.test" if os.getenv("ENVIRONMENT") == "test" else ".env"
     return Settings(_env_file=env_file)
 
+# Create settings instance at module level
 settings = get_settings()
 
