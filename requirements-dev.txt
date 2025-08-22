@@ -1,0 +1,70 @@
+# Development and testing dependencies for Context Memory Gateway
+# These packages are used for development, testing, and CI/CD processes
+
+# Testing framework
+pytest>=7.4.0
+pytest-asyncio>=0.21.0
+pytest-cov>=4.1.0
+pytest-mock>=3.11.0
+pytest-xdist>=3.3.0  # Parallel test execution
+pytest-timeout>=2.1.0
+pytest-html>=3.2.0  # HTML test reports
+
+# Code quality and formatting
+black>=23.12.0
+isort>=5.13.0
+flake8>=7.0.0
+flake8-docstrings>=1.7.0
+flake8-bugbear>=23.12.0
+flake8-comprehensions>=3.14.0
+mypy>=1.8.0
+types-all>=1.0.0
+
+# Security scanning
+bandit[toml]>=1.7.5
+safety>=2.3.0
+pip-audit>=2.6.0
+
+# Code analysis
+radon>=6.0.0  # Code complexity analysis
+xenon>=0.9.0  # Code complexity monitoring
+vulture>=2.10  # Dead code detection
+
+# Documentation
+sphinx>=7.2.0
+sphinx-rtd-theme>=2.0.0
+sphinx-autodoc-typehints>=1.25.0
+
+# Development utilities
+pre-commit>=3.6.0
+pipdeptree>=2.13.0  # Dependency tree visualization
+pip-check>=2.8.1  # Check for outdated packages
+
+# Performance testing
+locust>=2.17.0  # Load testing
+aiohttp>=3.9.0  # HTTP client for benchmarks
+
+# Debugging and profiling
+ipdb>=0.13.13
+line_profiler>=4.1.0
+memory_profiler>=0.61.0
+py-spy>=0.3.14
+
+# Database testing utilities
+faker>=21.0.0  # Generate fake data for tests
+factory-boy>=3.3.0  # Test data factories
+
+# API testing
+httpx>=0.26.0  # Modern HTTP client
+respx>=0.20.0  # HTTP mocking
+
+# Environment management
+python-dotenv>=1.0.0
+
+# Monitoring and observability testing
+prometheus-client>=0.19.0
+
+# Type stubs for better type checking
+types-redis>=4.6.0
+types-requests>=2.31.0
+types-python-dateutil>=2.8.0

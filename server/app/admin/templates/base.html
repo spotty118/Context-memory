@@ -1,0 +1,244 @@
+<!DOCTYPE html>
+<html lang="en" class="h-full bg-gray-50">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>{% block title %}Context Memory Gateway - Admin{% endblock %}</title>
+    
+    <!-- Tailwind CSS -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    
+    <!-- HTMX -->
+    <script src="https://unpkg.com/htmx.org@1.9.10"></script>
+    
+    <!-- Lucide Icons -->
+    <script src="https://unpkg.com/lucide@latest/dist/umd/lucide.js"></script>
+    
+    <!-- Chart.js for analytics -->
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    
+    <!-- Custom styles -->
+    <style>
+        .sidebar-transition {
+            transition: transform 0.3s ease-in-out;
+        }
+        
+        .fade-in {
+            animation: fadeIn 0.3s ease-in;
+        }
+        
+        @keyframes fadeIn {
+            from { opacity: 0; transform: translateY(10px); }
+            to { opacity: 1; transform: translateY(0); }
+        }
+        
+        .card-hover {
+            transition: all 0.2s ease-in-out;
+        }
+        
+        .card-hover:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 10px 25px -3px rgba(0, 0, 0, 0.1), 0 4px 6px -2px rgba(0, 0, 0, 0.05);
+        }
+        
+        .gradient-bg {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+        }
+        
+        .status-indicator {
+            animation: pulse 2s infinite;
+        }
+        
+        @keyframes pulse {
+            0%, 100% { opacity: 1; }
+            50% { opacity: 0.5; }
+        }
+    </style>
+</head>
+<body class="h-full">
+    <div class="min-h-full">
+        <!-- Sidebar -->
+        <div class="fixed inset-y-0 left-0 z-50 w-64 bg-white shadow-lg sidebar-transition" id="sidebar">
+            <div class="flex h-full flex-col">
+                <!-- Logo -->
+                <div class="flex h-16 shrink-0 items-center px-6 gradient-bg">
+                    <div class="flex items-center space-x-3">
+                        <div class="w-8 h-8 bg-white rounded-lg flex items-center justify-center">
+                            <i data-lucide="brain-circuit" class="w-5 h-5 text-indigo-600"></i>
+                        </div>
+                        <h1 class="text-white font-bold text-lg">Context Gateway</h1>
+                    </div>
+                </div>
+                
+                <!-- Navigation -->
+                <nav class="flex flex-1 flex-col px-6 py-4">
+                    <ul role="list" class="flex flex-1 flex-col gap-y-2">
+                        <li>
+                            <a href="/admin/dashboard" 
+                               class="group flex gap-x-3 rounded-md p-2 text-sm leading-6 font-medium text-gray-700 hover:text-indigo-600 hover:bg-gray-50 transition-colors"
+                               hx-get="/admin/dashboard" 
+                               hx-target="#main-content"
+                               hx-push-url="true">
+                                <i data-lucide="layout-dashboard" class="w-5 h-5 shrink-0"></i>
+                                Dashboard
+                            </a>
+                        </li>
+                        <li>
+                            <a href="/admin/api-keys" 
+                               class="group flex gap-x-3 rounded-md p-2 text-sm leading-6 font-medium text-gray-700 hover:text-indigo-600 hover:bg-gray-50 transition-colors"
+                               hx-get="/admin/api-keys" 
+                               hx-target="#main-content"
+                               hx-push-url="true">
+                                <i data-lucide="key" class="w-5 h-5 shrink-0"></i>
+                                API Keys
+                            </a>
+                        </li>
+                        <li>
+                            <a href="/admin/models" 
+                               class="group flex gap-x-3 rounded-md p-2 text-sm leading-6 font-medium text-gray-700 hover:text-indigo-600 hover:bg-gray-50 transition-colors"
+                               hx-get="/admin/models" 
+                               hx-target="#main-content"
+                               hx-push-url="true">
+                                <i data-lucide="cpu" class="w-5 h-5 shrink-0"></i>
+                                Models
+                            </a>
+                        </li>
+                        <li>
+                            <a href="/admin/usage" 
+                               class="group flex gap-x-3 rounded-md p-2 text-sm leading-6 font-medium text-gray-700 hover:text-indigo-600 hover:bg-gray-50 transition-colors"
+                               hx-get="/admin/usage" 
+                               hx-target="#main-content"
+                               hx-push-url="true">
+                                <i data-lucide="bar-chart-3" class="w-5 h-5 shrink-0"></i>
+                                Usage Analytics
+                            </a>
+                        </li>
+                        <li>
+                            <a href="/admin/context" 
+                               class="group flex gap-x-3 rounded-md p-2 text-sm leading-6 font-medium text-gray-700 hover:text-indigo-600 hover:bg-gray-50 transition-colors"
+                               hx-get="/admin/context" 
+                               hx-target="#main-content"
+                               hx-push-url="true">
+                                <i data-lucide="database" class="w-5 h-5 shrink-0"></i>
+                                Context Memory
+                            </a>
+                        </li>
+                        <li>
+                            <a href="/admin/workers" 
+                               class="group flex gap-x-3 rounded-md p-2 text-sm leading-6 font-medium text-gray-700 hover:text-indigo-600 hover:bg-gray-50 transition-colors"
+                               hx-get="/admin/workers" 
+                               hx-target="#main-content"
+                               hx-push-url="true">
+                                <i data-lucide="cog" class="w-5 h-5 shrink-0"></i>
+                                Workers
+                            </a>
+                        </li>
+                        <li>
+                            <a href="/admin/settings" 
+                               class="group flex gap-x-3 rounded-md p-2 text-sm leading-6 font-medium text-gray-700 hover:text-indigo-600 hover:bg-gray-50 transition-colors"
+                               hx-get="/admin/settings" 
+                               hx-target="#main-content"
+                               hx-push-url="true">
+                                <i data-lucide="settings" class="w-5 h-5 shrink-0"></i>
+                                Settings
+                            </a>
+                        </li>
+                    </ul>
+                    
+                    <!-- User menu -->
+                    <div class="mt-auto">
+                        <div class="flex items-center gap-x-3 p-2 text-sm text-gray-700 mb-2">
+                            <div class="w-8 h-8 bg-indigo-100 rounded-full flex items-center justify-center">
+                                <i data-lucide="user" class="w-4 h-4 text-indigo-600"></i>
+                            </div>
+                            <div class="flex-1">
+                                <p class="font-medium">Admin User</p>
+                                <p class="text-xs text-gray-500">Authenticated</p>
+                            </div>
+                        </div>
+                        
+                        <!-- Logout button -->
+                        <form method="post" action="/admin/logout" class="w-full">
+                            <button type="submit" class="w-full flex items-center gap-x-3 rounded-md p-2 text-sm leading-6 font-medium text-gray-700 hover:text-red-600 hover:bg-red-50 transition-colors">
+                                <i data-lucide="log-out" class="w-5 h-5 shrink-0"></i>
+                                Sign Out
+                            </button>
+                        </form>
+                    </div>
+                </nav>
+            </div>
+        </div>
+        
+        <!-- Main content -->
+        <main class="pl-64">
+            <!-- Top bar -->
+            <div class="sticky top-0 z-40 flex h-16 shrink-0 items-center gap-x-4 border-b border-gray-200 bg-white px-4 shadow-sm sm:gap-x-6 sm:px-6 lg:px-8">
+                <button type="button" class="p-2.5 text-gray-700 lg:hidden" onclick="toggleSidebar()">
+                    <i data-lucide="menu" class="w-5 h-5"></i>
+                </button>
+                
+                <div class="flex flex-1 gap-x-4 self-stretch lg:gap-x-6">
+                    <div class="flex flex-1 items-center">
+                        <h2 class="text-lg font-semibold text-gray-900">{% block page_title %}Dashboard{% endblock %}</h2>
+                    </div>
+                    
+                    <div class="flex items-center gap-x-4 lg:gap-x-6">
+                        <!-- Status indicator -->
+                        <div class="flex items-center gap-x-2">
+                            <div class="w-2 h-2 bg-green-400 rounded-full status-indicator"></div>
+                            <span class="text-sm text-gray-600">System Online</span>
+                        </div>
+                        
+                        <!-- Notifications -->
+                        <button type="button" class="p-2 text-gray-400 hover:text-gray-500">
+                            <i data-lucide="bell" class="w-5 h-5"></i>
+                        </button>
+                    </div>
+                </div>
+            </div>
+            
+            <!-- Page content -->
+            <div class="px-4 py-6 sm:px-6 lg:px-8" id="main-content">
+                {% block content %}
+                <!-- Default dashboard content will be loaded here -->
+                {% endblock %}
+            </div>
+        </main>
+    </div>
+    
+    <!-- Mobile sidebar overlay -->
+    <div class="fixed inset-0 z-40 bg-gray-600 bg-opacity-75 lg:hidden hidden" id="sidebar-overlay" onclick="toggleSidebar()"></div>
+    
+    <script>
+        // Initialize Lucide icons
+        lucide.createIcons();
+        
+        // Sidebar toggle for mobile
+        function toggleSidebar() {
+            const sidebar = document.getElementById('sidebar');
+            const overlay = document.getElementById('sidebar-overlay');
+            
+            sidebar.classList.toggle('-translate-x-full');
+            overlay.classList.toggle('hidden');
+        }
+        
+        // HTMX event handlers
+        document.body.addEventListener('htmx:afterSwap', function(evt) {
+            // Re-initialize icons after HTMX swaps content
+            lucide.createIcons();
+            
+            // Add fade-in animation to new content
+            evt.detail.target.classList.add('fade-in');
+        });
+        
+        // Auto-refresh status indicators
+        setInterval(function() {
+            // This would typically fetch real status from an API
+            console.log('Status check...');
+        }, 30000);
+    </script>
+    
+    {% block scripts %}{% endblock %}
+</body>
+</html>
+

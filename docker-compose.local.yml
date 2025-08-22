@@ -1,0 +1,235 @@
+version: '3.8'
+
+services:
+  # PostgreSQL Database with pgvector extension
+  postgres:
+    image: pgvector/pgvector:pg15
+    container_name: cmg-postgres
+    environment:
+      POSTGRES_DB: context_memory_gateway
+      POSTGRES_USER: cmg_user
+      POSTGRES_PASSWORD: cmg_password
+      POSTGRES_INITDB_ARGS: "--encoding=UTF-8"
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+      - ./infra/sql/init.sql:/docker-entrypoint-initdb.d/init.sql:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U cmg_user -d context_memory_gateway"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      - cmg-network
+
+  # Redis for caching and rate limiting
+  redis:
+    image: redis:7-alpine
+    container_name: cmg-redis
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis_data:/data
+    command: redis-server --appendonly yes --maxmemory 256mb --maxmemory-policy allkeys-lru
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+    networks:
+      - cmg-network
+
+  # Qdrant Vector Database (optional)
+  qdrant:
+    image: qdrant/qdrant:latest
+    container_name: cmg-qdrant
+    ports:
+      - "6333:6333"
+      - "6334:6334"
+    volumes:
+      - qdrant_data:/qdrant/storage
+    environment:
+      QDRANT__SERVICE__HTTP_PORT: 6333
+      QDRANT__SERVICE__GRPC_PORT: 6334
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:6333/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+    networks:
+      - cmg-network
+
+  # Main Application
+  app:
+    build:
+      context: .
+      dockerfile: Dockerfile
+      target: production
+    container_name: cmg-app
+    ports:
+      - "8000:8000"
+    environment:
+      PYTHONPATH: /app/server
+      # Database
+      DATABASE_URL: postgresql://cmg_user:cmg_password@postgres:5432/context_memory_gateway
+      
+      # Redis
+      REDIS_URL: redis://redis:6379/0
+      
+      # Qdrant (optional)
+      QDRANT_URL: http://qdrant:6333
+      
+      # Application settings
+      ENVIRONMENT: development
+      DEBUG: "true"
+      LOG_LEVEL: DEBUG
+      
+      # OpenRouter (set these in .env file)
+      OPENROUTER_API_KEY: ${OPENROUTER_API_KEY}
+      OPENROUTER_API_BASE: https://openrouter.ai/api/v1
+      
+      # Security
+      SECRET_KEY: ${SECRET_KEY:-dev-secret-key-change-in-production}
+      
+      # Rate limiting
+      RATE_LIMIT_REQUESTS: 100
+      RATE_LIMIT_WINDOW: 60
+      
+      # Context Memory
+      DEFAULT_TOKEN_BUDGET: 8000
+      MAX_CONTEXT_ITEMS: 50
+      EMBEDDING_MODEL: text-embedding-ada-002
+      
+      # Server
+      SERVER_HOST: 0.0.0.0
+      SERVER_PORT: 8000
+      
+      # Metrics and monitoring
+      METRICS_ENABLED: "true"
+      SENTRY_DSN: ${SENTRY_DSN:-}
+      
+    volumes:
+      - ./server:/app/server:ro
+      - ./logs:/app/logs
+      - ./data:/app/data
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+    networks:
+      - cmg-network
+    restart: unless-stopped
+
+  # Background Worker for async tasks
+  worker:
+    build:
+      context: .
+      dockerfile: Dockerfile
+      target: production
+    container_name: cmg-worker
+    environment:
+      PYTHONPATH: /app/server
+      # Same environment as app
+      DATABASE_URL: postgresql://cmg_user:cmg_password@postgres:5432/context_memory_gateway
+      REDIS_URL: redis://redis:6379/0
+      QDRANT_URL: http://qdrant:6333
+      ENVIRONMENT: development
+      DEBUG: "true"
+      LOG_LEVEL: DEBUG
+      OPENROUTER_API_KEY: ${OPENROUTER_API_KEY}
+      SECRET_KEY: ${SECRET_KEY:-dev-secret-key-change-in-production}
+      
+    volumes:
+      - ./server:/app/server:ro
+      - ./logs:/app/logs
+      - ./data:/app/data
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    command: ["python", "-m", "rq", "worker", "--url", "redis://redis:6379/0", "default", "high", "low"]
+    networks:
+      - cmg-network
+    restart: unless-stopped
+
+  # Nginx reverse proxy (optional, for production-like setup)
+  nginx:
+    image: nginx:alpine
+    container_name: cmg-nginx
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./infra/nginx/nginx.conf:/etc/nginx/nginx.conf:ro
+      - ./infra/nginx/conf.d:/etc/nginx/conf.d:ro
+      - ./logs/nginx:/var/log/nginx
+    depends_on:
+      - app
+    networks:
+      - cmg-network
+    restart: unless-stopped
+
+  # Prometheus for metrics (optional)
+  prometheus:
+    image: prom/prometheus:latest
+    container_name: cmg-prometheus
+    ports:
+      - "9090:9090"
+    volumes:
+      - ./infra/prometheus/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      - prometheus_data:/prometheus
+    command:
+      - '--config.file=/etc/prometheus/prometheus.yml'
+      - '--storage.tsdb.path=/prometheus'
+      - '--web.console.libraries=/etc/prometheus/console_libraries'
+      - '--web.console.templates=/etc/prometheus/consoles'
+      - '--storage.tsdb.retention.time=200h'
+      - '--web.enable-lifecycle'
+    networks:
+      - cmg-network
+    profiles:
+      - monitoring
+
+  # Grafana for visualization (optional)
+  grafana:
+    image: grafana/grafana:latest
+    container_name: cmg-grafana
+    ports:
+      - "3000:3000"
+    volumes:
+      - grafana_data:/var/lib/grafana
+      - ./infra/grafana/provisioning:/etc/grafana/provisioning:ro
+    environment:
+      GF_SECURITY_ADMIN_USER: admin
+      GF_SECURITY_ADMIN_PASSWORD: ${GRAFANA_PASSWORD:-admin}
+      GF_USERS_ALLOW_SIGN_UP: "false"
+    networks:
+      - cmg-network
+    profiles:
+      - monitoring
+
+volumes:
+  postgres_data:
+    driver: local
+  redis_data:
+    driver: local
+  qdrant_data:
+    driver: local
+  prometheus_data:
+    driver: local
+  grafana_data:
+    driver: local
+
+networks:
+  cmg-network:
+    driver: bridge
+    name: context-memory-gateway

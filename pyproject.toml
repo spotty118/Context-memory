@@ -1,0 +1,101 @@
+[tool.bandit]
+# Bandit configuration for Context Memory Gateway security scanning
+
+# Include all Python files in the server directory
+include = ["server/app"]
+
+# Exclude test files and temporary directories
+exclude_dirs = [
+    "tests",
+    "test_*",
+    "*_test",
+    "venv",
+    ".venv",
+    "build",
+    "dist",
+    ".git"
+]
+
+# Skip specific test IDs that are false positives or acceptable risks
+skips = [
+    "B101",  # assert_used - We use asserts in tests
+    "B601",  # paramiko_calls - We don't use paramiko
+    "B602",  # subprocess_popen_with_shell_equals_true - Handled carefully
+]
+
+# Set confidence levels for reporting
+# HIGH: Only report high confidence issues
+# MEDIUM: Report medium and high confidence issues  
+# LOW: Report all issues
+confidence = "MEDIUM"
+
+# Severity levels to report
+# LOW: Report all severity levels
+# MEDIUM: Report medium and high severity
+# HIGH: Only report high severity
+severity = "LOW"
+
+# Additional settings
+recursive = true
+aggregate = "file"
+number = 3
+format = "json"
+
+[tool.bandit.any_other_function_with_shell_equals_true]
+no_shell = [
+    "os.execl",
+    "os.execle", 
+    "os.execlp",
+    "os.execlpe",
+    "os.execv",
+    "os.execve",
+    "os.execvp",
+    "os.execvpe",
+    "os.spawnl",
+    "os.spawnle",
+    "os.spawnlp",
+    "os.spawnlpe",
+    "os.spawnv",
+    "os.spawnve",
+    "os.spawnvp",
+    "os.spawnvpe",
+    "os.startfile"
+]
+
+[tool.bandit.hardcoded_bind_all_interfaces]
+# Allow binding to all interfaces in development
+skip = false
+
+[tool.bandit.hardcoded_password_string]
+# Skip password detection in test files
+word_list = ["password", "pass", "passwd", "pwd", "secret", "token"]
+
+[tool.bandit.hardcoded_password_funcarg]
+# Skip hardcoded passwords in function arguments
+word_list = ["password", "pass", "passwd", "pwd", "secret", "token"]
+
+[tool.bandit.hardcoded_password_default]
+# Skip hardcoded passwords in default values
+word_list = ["password", "pass", "passwd", "pwd", "secret", "token"]
+
+[tool.bandit.ssl_with_bad_version]
+# Ensure we're using secure SSL/TLS versions
+bad_protocol_versions = [
+    "PROTOCOL_SSLv2",
+    "PROTOCOL_SSLv3", 
+    "PROTOCOL_TLSv1",
+    "PROTOCOL_TLSv1_1"
+]
+
+[tool.bandit.ssl_with_bad_defaults]
+# Check for SSL contexts with bad defaults
+bad_protocol_versions = [
+    "PROTOCOL_SSLv2",
+    "PROTOCOL_SSLv3",
+    "PROTOCOL_TLSv1", 
+    "PROTOCOL_TLSv1_1"
+]
+
+[tool.bandit.ssl_with_no_version]
+# Ensure SSL version is specified
+skip = false

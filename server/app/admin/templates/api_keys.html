@@ -1,0 +1,325 @@
+{% extends "base.html" %}
+
+{% block title %}API Keys - Context Memory Gateway{% endblock %}
+{% block page_title %}API Key Management{% endblock %}
+
+{% block content %}
+<div class="fade-in">
+    <!-- Header with Create Button -->
+    <div class="sm:flex sm:items-center sm:justify-between mb-6">
+        <div>
+            <h1 class="text-2xl font-bold text-gray-900">API Keys</h1>
+            <p class="mt-2 text-sm text-gray-700">Manage API keys for accessing the Context Memory Gateway</p>
+        </div>
+        <div class="mt-4 sm:mt-0">
+            <button type="button" 
+                    class="inline-flex items-center px-4 py-2 border border-transparent text-sm font-medium rounded-md shadow-sm text-white bg-indigo-600 hover:bg-indigo-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500 transition-colors"
+                    hx-get="/admin/api-keys/create"
+                    hx-target="#modal-container"
+                    hx-trigger="click">
+                <i data-lucide="plus" class="w-4 h-4 mr-2"></i>
+                Create API Key
+            </button>
+        </div>
+    </div>
+
+    <!-- Stats Cards -->
+    <div class="grid grid-cols-1 gap-6 sm:grid-cols-3 mb-8">
+        <div class="bg-white overflow-hidden shadow rounded-lg card-hover">
+            <div class="p-5">
+                <div class="flex items-center">
+                    <div class="flex-shrink-0">
+                        <div class="w-8 h-8 bg-green-500 rounded-md flex items-center justify-center">
+                            <i data-lucide="check-circle" class="w-4 h-4 text-white"></i>
+                        </div>
+                    </div>
+                    <div class="ml-5 w-0 flex-1">
+                        <dl>
+                            <dt class="text-sm font-medium text-gray-500 truncate">Active Keys</dt>
+                            <dd class="text-lg font-medium text-gray-900">{{ stats.active_keys | default('18') }}</dd>
+                        </dl>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <div class="bg-white overflow-hidden shadow rounded-lg card-hover">
+            <div class="p-5">
+                <div class="flex items-center">
+                    <div class="flex-shrink-0">
+                        <div class="w-8 h-8 bg-yellow-500 rounded-md flex items-center justify-center">
+                            <i data-lucide="pause-circle" class="w-4 h-4 text-white"></i>
+                        </div>
+                    </div>
+                    <div class="ml-5 w-0 flex-1">
+                        <dl>
+                            <dt class="text-sm font-medium text-gray-500 truncate">Suspended</dt>
+                            <dd class="text-lg font-medium text-gray-900">{{ stats.suspended_keys | default('3') }}</dd>
+                        </dl>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <div class="bg-white overflow-hidden shadow rounded-lg card-hover">
+            <div class="p-5">
+                <div class="flex items-center">
+                    <div class="flex-shrink-0">
+                        <div class="w-8 h-8 bg-blue-500 rounded-md flex items-center justify-center">
+                            <i data-lucide="zap" class="w-4 h-4 text-white"></i>
+                        </div>
+                    </div>
+                    <div class="ml-5 w-0 flex-1">
+                        <dl>
+                            <dt class="text-sm font-medium text-gray-500 truncate">Total Requests</dt>
+                            <dd class="text-lg font-medium text-gray-900">{{ stats.total_requests | default('847,291') }}</dd>
+                        </dl>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Filters and Search -->
+    <div class="bg-white shadow rounded-lg mb-6">
+        <div class="px-6 py-4 border-b border-gray-200">
+            <div class="flex flex-col sm:flex-row sm:items-center sm:justify-between space-y-3 sm:space-y-0">
+                <div class="flex-1 min-w-0">
+                    <div class="relative">
+                        <div class="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
+                            <i data-lucide="search" class="w-4 h-4 text-gray-400"></i>
+                        </div>
+                        <input type="text" 
+                               placeholder="Search API keys..." 
+                               class="block w-full pl-10 pr-3 py-2 border border-gray-300 rounded-md leading-5 bg-white placeholder-gray-500 focus:outline-none focus:placeholder-gray-400 focus:ring-1 focus:ring-indigo-500 focus:border-indigo-500 sm:text-sm"
+                               hx-get="/admin/api-keys/search"
+                               hx-target="#api-keys-table"
+                               hx-trigger="keyup changed delay:300ms"
+                               name="q">
+                    </div>
+                </div>
+                <div class="flex items-center space-x-3">
+                    <select class="block w-full pl-3 pr-10 py-2 text-base border border-gray-300 focus:outline-none focus:ring-indigo-500 focus:border-indigo-500 sm:text-sm rounded-md"
+                            hx-get="/admin/api-keys/filter"
+                            hx-target="#api-keys-table"
+                            hx-trigger="change"
+                            name="status">
+                        <option value="">All Status</option>
+                        <option value="active">Active</option>
+                        <option value="suspended">Suspended</option>
+                        <option value="expired">Expired</option>
+                    </select>
+                    <select class="block w-full pl-3 pr-10 py-2 text-base border border-gray-300 focus:outline-none focus:ring-indigo-500 focus:border-indigo-500 sm:text-sm rounded-md"
+                            hx-get="/admin/api-keys/filter"
+                            hx-target="#api-keys-table"
+                            hx-trigger="change"
+                            name="workspace">
+                        <option value="">All Workspaces</option>
+                        <option value="production">Production</option>
+                        <option value="staging">Staging</option>
+                        <option value="development">Development</option>
+                    </select>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- API Keys Table -->
+    <div class="bg-white shadow rounded-lg overflow-hidden" id="api-keys-table">
+        <table class="min-w-full divide-y divide-gray-200">
+            <thead class="bg-gray-50">
+                <tr>
+                    <th scope="col" class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                        Key / Workspace
+                    </th>
+                    <th scope="col" class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                        Usage
+                    </th>
+                    <th scope="col" class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                        Status
+                    </th>
+                    <th scope="col" class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                        Created
+                    </th>
+                    <th scope="col" class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                        Last Used
+                    </th>
+                    <th scope="col" class="relative px-6 py-3">
+                        <span class="sr-only">Actions</span>
+                    </th>
+                </tr>
+            </thead>
+            <tbody class="bg-white divide-y divide-gray-200">
+                {% for key in api_keys | default([
+                    {
+                        'id': 'ak_prod_001',
+                        'key_prefix': 'ak_prod_001_',
+                        'workspace_name': 'Production',
+                        'status': 'active',
+                        'requests_count': 45678,
+                        'quota_limit': 100000,
+                        'created_at': '2025-01-15',
+                        'last_used_at': '2 minutes ago'
+                    },
+                    {
+                        'id': 'ak_stage_002',
+                        'key_prefix': 'ak_stage_002_',
+                        'workspace_name': 'Staging',
+                        'status': 'active',
+                        'requests_count': 12340,
+                        'quota_limit': 50000,
+                        'created_at': '2025-01-18',
+                        'last_used_at': '1 hour ago'
+                    },
+                    {
+                        'id': 'ak_dev_003',
+                        'key_prefix': 'ak_dev_003_',
+                        'workspace_name': 'Development',
+                        'status': 'suspended',
+                        'requests_count': 8901,
+                        'quota_limit': 25000,
+                        'created_at': '2025-01-20',
+                        'last_used_at': '3 days ago'
+                    }
+                ]) %}
+                <tr class="hover:bg-gray-50">
+                    <td class="px-6 py-4 whitespace-nowrap">
+                        <div class="flex items-center">
+                            <div class="flex-shrink-0 h-8 w-8">
+                                <div class="h-8 w-8 rounded-full bg-indigo-100 flex items-center justify-center">
+                                    <i data-lucide="key" class="w-4 h-4 text-indigo-600"></i>
+                                </div>
+                            </div>
+                            <div class="ml-4">
+                                <div class="text-sm font-medium text-gray-900">
+                                    {{ key.key_prefix }}••••••••
+                                </div>
+                                <div class="text-sm text-gray-500">{{ key.workspace_name }}</div>
+                            </div>
+                        </div>
+                    </td>
+                    <td class="px-6 py-4 whitespace-nowrap">
+                        <div class="text-sm text-gray-900">{{ "{:,}".format(key.requests_count) }} requests</div>
+                        <div class="w-full bg-gray-200 rounded-full h-1.5 mt-1">
+                            <div class="bg-indigo-600 h-1.5 rounded-full" 
+                                 style="width: {{ (key.requests_count / key.quota_limit * 100) | round(1) }}%"></div>
+                        </div>
+                        <div class="text-xs text-gray-500 mt-1">
+                            {{ "{:,}".format(key.quota_limit) }} limit
+                        </div>
+                    </td>
+                    <td class="px-6 py-4 whitespace-nowrap">
+                        {% if key.status == 'active' %}
+                        <span class="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-green-100 text-green-800">
+                            <div class="w-1.5 h-1.5 bg-green-400 rounded-full mr-1.5"></div>
+                            Active
+                        </span>
+                        {% elif key.status == 'suspended' %}
+                        <span class="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-yellow-100 text-yellow-800">
+                            <div class="w-1.5 h-1.5 bg-yellow-400 rounded-full mr-1.5"></div>
+                            Suspended
+                        </span>
+                        {% else %}
+                        <span class="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-red-100 text-red-800">
+                            <div class="w-1.5 h-1.5 bg-red-400 rounded-full mr-1.5"></div>
+                            Expired
+                        </span>
+                        {% endif %}
+                    </td>
+                    <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
+                        {{ key.created_at }}
+                    </td>
+                    <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
+                        {{ key.last_used_at }}
+                    </td>
+                    <td class="px-6 py-4 whitespace-nowrap text-right text-sm font-medium">
+                        <div class="flex items-center space-x-2">
+                            <button class="text-indigo-600 hover:text-indigo-900 p-1 rounded"
+                                    hx-get="/admin/api-keys/{{ key.id }}/edit"
+                                    hx-target="#modal-container"
+                                    title="Edit">
+                                <i data-lucide="edit" class="w-4 h-4"></i>
+                            </button>
+                            <button class="text-gray-600 hover:text-gray-900 p-1 rounded"
+                                    hx-get="/admin/api-keys/{{ key.id }}/usage"
+                                    hx-target="#modal-container"
+                                    title="View Usage">
+                                <i data-lucide="bar-chart-3" class="w-4 h-4"></i>
+                            </button>
+                            {% if key.status == 'active' %}
+                            <button class="text-yellow-600 hover:text-yellow-900 p-1 rounded"
+                                    hx-post="/admin/api-keys/{{ key.id }}/suspend"
+                                    hx-target="#api-keys-table"
+                                    hx-confirm="Are you sure you want to suspend this API key?"
+                                    title="Suspend">
+                                <i data-lucide="pause" class="w-4 h-4"></i>
+                            </button>
+                            {% else %}
+                            <button class="text-green-600 hover:text-green-900 p-1 rounded"
+                                    hx-post="/admin/api-keys/{{ key.id }}/activate"
+                                    hx-target="#api-keys-table"
+                                    title="Activate">
+                                <i data-lucide="play" class="w-4 h-4"></i>
+                            </button>
+                            {% endif %}
+                            <button class="text-red-600 hover:text-red-900 p-1 rounded"
+                                    hx-delete="/admin/api-keys/{{ key.id }}"
+                                    hx-target="#api-keys-table"
+                                    hx-confirm="Are you sure you want to delete this API key? This action cannot be undone."
+                                    title="Delete">
+                                <i data-lucide="trash-2" class="w-4 h-4"></i>
+                            </button>
+                        </div>
+                    </td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+        
+        <!-- Pagination -->
+        <div class="bg-white px-4 py-3 flex items-center justify-between border-t border-gray-200 sm:px-6">
+            <div class="flex-1 flex justify-between sm:hidden">
+                <button class="relative inline-flex items-center px-4 py-2 border border-gray-300 text-sm font-medium rounded-md text-gray-700 bg-white hover:bg-gray-50">
+                    Previous
+                </button>
+                <button class="ml-3 relative inline-flex items-center px-4 py-2 border border-gray-300 text-sm font-medium rounded-md text-gray-700 bg-white hover:bg-gray-50">
+                    Next
+                </button>
+            </div>
+            <div class="hidden sm:flex-1 sm:flex sm:items-center sm:justify-between">
+                <div>
+                    <p class="text-sm text-gray-700">
+                        Showing <span class="font-medium">1</span> to <span class="font-medium">10</span> of <span class="font-medium">21</span> results
+                    </p>
+                </div>
+                <div>
+                    <nav class="relative z-0 inline-flex rounded-md shadow-sm -space-x-px" aria-label="Pagination">
+                        <button class="relative inline-flex items-center px-2 py-2 rounded-l-md border border-gray-300 bg-white text-sm font-medium text-gray-500 hover:bg-gray-50">
+                            <i data-lucide="chevron-left" class="w-4 h-4"></i>
+                        </button>
+                        <button class="bg-indigo-50 border-indigo-500 text-indigo-600 relative inline-flex items-center px-4 py-2 border text-sm font-medium">1</button>
+                        <button class="bg-white border-gray-300 text-gray-500 hover:bg-gray-50 relative inline-flex items-center px-4 py-2 border text-sm font-medium">2</button>
+                        <button class="bg-white border-gray-300 text-gray-500 hover:bg-gray-50 relative inline-flex items-center px-4 py-2 border text-sm font-medium">3</button>
+                        <button class="relative inline-flex items-center px-2 py-2 rounded-r-md border border-gray-300 bg-white text-sm font-medium text-gray-500 hover:bg-gray-50">
+                            <i data-lucide="chevron-right" class="w-4 h-4"></i>
+                        </button>
+                    </nav>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Modal Container -->
+    <div id="modal-container"></div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+    // Auto-refresh table every 30 seconds
+    setInterval(function() {
+        htmx.trigger('#api-keys-table', 'refresh');
+    }, 30000);
+</script>
+{% endblock %}
+

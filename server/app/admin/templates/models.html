@@ -1,0 +1,627 @@
+{% extends "base.html" %}
+
+{% block title %}Models - Context Memory Gateway{% endblock %}
+{% block page_title %}Model Catalog{% endblock %}
+
+{% block content %}
+<div class="fade-in">
+    <!-- Header with Sync Button -->
+    <div class="sm:flex sm:items-center sm:justify-between mb-6">
+        <div>
+            <h1 class="text-2xl font-bold text-gray-900">Model Catalog</h1>
+            <p class="mt-2 text-sm text-gray-700">Manage and monitor available AI models from OpenRouter</p>
+        </div>
+        <div class="mt-4 sm:mt-0 flex space-x-3">
+            <button type="button" 
+                    class="inline-flex items-center px-4 py-2 border border-gray-300 text-sm font-medium rounded-md text-gray-700 bg-white hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500 transition-colors"
+                    hx-get="/admin/models/sync-status"
+                    hx-target="#sync-status">
+                <i data-lucide="refresh-cw" class="w-4 h-4 mr-2"></i>
+                Check Sync Status
+            </button>
+            <button type="button" 
+                    class="inline-flex items-center px-4 py-2 border border-transparent text-sm font-medium rounded-md shadow-sm text-white bg-indigo-600 hover:bg-indigo-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500 transition-colors"
+                    onclick="fetchOpenRouterModels()"
+                    id="fetch-models-btn">
+                <i data-lucide="download" class="w-4 h-4 mr-2"></i>
+                Fetch OpenRouter Models
+            </button>
+        </div>
+    </div>
+
+    <!-- Sync Status -->
+    <div id="sync-status" class="mb-6">
+        <div class="bg-blue-50 border border-blue-200 rounded-lg p-4">
+            <div class="flex items-center">
+                <div class="flex-shrink-0">
+                    <i data-lucide="info" class="w-5 h-5 text-blue-400"></i>
+                </div>
+                <div class="ml-3">
+                    <p class="text-sm text-blue-700">
+                        Ready to fetch models from OpenRouter • Click the button above to get started
+                    </p>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Stats Cards -->
+    <div class="grid grid-cols-1 gap-6 sm:grid-cols-4 mb-8">
+        <div class="bg-white overflow-hidden shadow rounded-lg card-hover">
+            <div class="p-5">
+                <div class="flex items-center">
+                    <div class="flex-shrink-0">
+                        <div class="w-8 h-8 bg-green-500 rounded-md flex items-center justify-center">
+                            <i data-lucide="check-circle" class="w-4 h-4 text-white"></i>
+                        </div>
+                    </div>
+                    <div class="ml-5 w-0 flex-1">
+                        <dl>
+                            <dt class="text-sm font-medium text-gray-500 truncate">Available Models</dt>
+                            <dd class="text-lg font-medium text-gray-900" data-stat="active-models">0</dd>
+                        </dl>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <div class="bg-white overflow-hidden shadow rounded-lg card-hover">
+            <div class="p-5">
+                <div class="flex items-center">
+                    <div class="flex-shrink-0">
+                        <div class="w-8 h-8 bg-yellow-500 rounded-md flex items-center justify-center">
+                            <i data-lucide="pause-circle" class="w-4 h-4 text-white"></i>
+                        </div>
+                    </div>
+                    <div class="ml-5 w-0 flex-1">
+                        <dl>
+                            <dt class="text-sm font-medium text-gray-500 truncate">Providers</dt>
+                            <dd class="text-lg font-medium text-gray-900" data-stat="total-providers">0</dd>
+                        </dl>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <div class="bg-white overflow-hidden shadow rounded-lg card-hover">
+            <div class="p-5">
+                <div class="flex items-center">
+                    <div class="flex-shrink-0">
+                        <div class="w-8 h-8 bg-blue-500 rounded-md flex items-center justify-center">
+                            <i data-lucide="trending-up" class="w-4 h-4 text-white"></i>
+                        </div>
+                    </div>
+                    <div class="ml-5 w-0 flex-1">
+                        <dl>
+                            <dt class="text-sm font-medium text-gray-500 truncate">Most Used</dt>
+                            <dd class="text-lg font-medium text-gray-900">{{ stats.most_used_model | default('GPT-4') }}</dd>
+                        </dl>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <div class="bg-white overflow-hidden shadow rounded-lg card-hover">
+            <div class="p-5">
+                <div class="flex items-center">
+                    <div class="flex-shrink-0">
+                        <div class="w-8 h-8 bg-purple-500 rounded-md flex items-center justify-center">
+                            <i data-lucide="zap" class="w-4 h-4 text-white"></i>
+                        </div>
+                    </div>
+                    <div class="ml-5 w-0 flex-1">
+                        <dl>
+                            <dt class="text-sm font-medium text-gray-500 truncate">Total Requests</dt>
+                            <dd class="text-lg font-medium text-gray-900">{{ stats.total_requests | default('45.2K') }}</dd>
+                        </dl>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Filters and Search -->
+    <div class="bg-white shadow rounded-lg mb-6">
+        <div class="px-6 py-4 border-b border-gray-200">
+            <div class="flex flex-col sm:flex-row sm:items-center sm:justify-between space-y-3 sm:space-y-0">
+                <div class="flex-1 min-w-0">
+                    <div class="relative">
+                        <div class="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
+                            <i data-lucide="search" class="w-4 h-4 text-gray-400"></i>
+                        </div>
+                        <input type="text" 
+                               placeholder="Search models..." 
+                               class="block w-full pl-10 pr-3 py-2 border border-gray-300 rounded-md leading-5 bg-white placeholder-gray-500 focus:outline-none focus:placeholder-gray-400 focus:ring-1 focus:ring-indigo-500 focus:border-indigo-500 sm:text-sm"
+                               onkeyup="filterModels(this.value)"
+                               id="model-search">
+                    </div>
+                </div>
+                <div class="flex items-center space-x-3">
+                    <select class="block w-full pl-3 pr-10 py-2 text-base border border-gray-300 focus:outline-none focus:ring-indigo-500 focus:border-indigo-500 sm:text-sm rounded-md"
+                            onchange="filterByProvider(this.value)"
+                            id="provider-filter">
+                        <option value="">All Providers</option>
+                        <option value="openai">OpenAI</option>
+                        <option value="anthropic">Anthropic</option>
+                        <option value="google">Google</option>
+                        <option value="meta">Meta</option>
+                        <option value="mistral">Mistral</option>
+                    </select>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Models Table -->
+    <div class="bg-white shadow rounded-lg overflow-hidden" id="models-table">
+        <table class="min-w-full divide-y divide-gray-200">
+            <thead class="bg-gray-50">
+                <tr>
+                    <th scope="col" class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                        Model
+                    </th>
+                    <th scope="col" class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                        Provider
+                    </th>
+                    <th scope="col" class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                        Pricing
+                    </th>
+                    <th scope="col" class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                        Context
+                    </th>
+                    <th scope="col" class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                        Status
+                    </th>
+                    <th scope="col" class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                        Actions
+                    </th>
+                </tr>
+            </thead>
+            <tbody class="bg-white divide-y divide-gray-200" id="models-tbody">
+                {% if models and models|length > 0 %}
+                    {% for model in models %}
+                    <tr class="hover:bg-gray-50" data-model-id="{{ model.model_id }}" data-provider="{{ model.provider }}">
+                        <td class="px-6 py-4 whitespace-nowrap">
+                            <div class="flex items-center">
+                                <div class="flex-shrink-0 h-8 w-8">
+                                    <div class="h-8 w-8 rounded-full bg-gradient-to-r from-purple-400 to-pink-400 flex items-center justify-center">
+                                        <i data-lucide="cpu" class="w-4 h-4 text-white"></i>
+                                    </div>
+                                </div>
+                                <div class="ml-4">
+                                    <div class="text-sm font-medium text-gray-900">{{ model.name }}</div>
+                                    <div class="text-sm text-gray-500">{{ model.id }}</div>
+                                </div>
+                            </div>
+                        </td>
+                        <td class="px-6 py-4 whitespace-nowrap">
+                            <div class="text-sm text-gray-900">{{ model.provider | title }}</div>
+                        </td>
+                        <td class="px-6 py-4 whitespace-nowrap">
+                            <div class="text-sm text-gray-900">${{ "%.4f"|format(model.pricing.input_cost) }}/1K input</div>
+                            <div class="text-sm text-gray-500">${{ "%.4f"|format(model.pricing.output_cost) }}/1K output</div>
+                        </td>
+                        <td class="px-6 py-4 whitespace-nowrap">
+                            <div class="text-sm text-gray-900">{{ "{:,}".format(model.context_window or 0) }}</div>
+                            <div class="text-sm text-gray-500">tokens</div>
+                        </td>
+                        <td class="px-6 py-4 whitespace-nowrap">
+                            {% if model.is_active %}
+                            <span class="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-green-100 text-green-800">
+                                <div class="w-1.5 h-1.5 bg-green-400 rounded-full mr-1.5"></div>
+                                Active
+                            </span>
+                            {% else %}
+                            <span class="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-gray-100 text-gray-800">
+                                <div class="w-1.5 h-1.5 bg-gray-400 rounded-full mr-1.5"></div>
+                                Available
+                            </span>
+                            {% endif %}
+                        </td>
+                        <td class="px-6 py-4 whitespace-nowrap text-right text-sm font-medium">
+                            <div class="flex items-center space-x-2">
+                                <button class="text-indigo-600 hover:text-indigo-900 p-1 rounded"
+                                        onclick="showStoredModelDetails('{{ model.model_id }}')"
+                                        title="View Details">
+                                    <i data-lucide="info" class="w-4 h-4"></i>
+                                </button>
+                                <button class="text-green-600 hover:text-green-900 p-1 rounded"
+                                        onclick="enableModelForUsers('{{ model.model_id }}')"
+                                        title="Enable for Users">
+                                    <i data-lucide="check" class="w-4 h-4"></i>
+                                </button>
+                            </div>
+                        </td>
+                    </tr>
+                    {% endfor %}
+                {% else %}
+                <tr>
+                    <td colspan="6" class="px-6 py-8 text-center text-gray-500">
+                        <div class="flex flex-col items-center">
+                            <i data-lucide="database" class="w-12 h-12 text-gray-300 mb-4"></i>
+                            <p class="text-lg font-medium text-gray-900 mb-2">No models stored</p>
+                            <p class="text-sm text-gray-500">Click "Fetch OpenRouter Models" to load available models</p>
+                        </div>
+                    </td>
+                </tr>
+                {% endif %}
+            </tbody>
+        </table>
+    </div>
+
+    <!-- Modal Container -->
+    <div id="modal-container"></div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+    let openRouterModels = [];
+    let filteredModels = [];
+
+    async function fetchOpenRouterModels() {
+        const btn = document.getElementById('fetch-models-btn');
+        const originalText = btn.innerHTML;
+        
+        // Show loading state
+        btn.innerHTML = '<div class="animate-spin rounded-full h-4 w-4 border-b-2 border-white mr-2"></div>Fetching Models...';
+        btn.disabled = true;
+        
+        try {
+            const response = await fetch('/admin/models/fetch');
+            const data = await response.json();
+            
+            if (data.success) {
+                openRouterModels = data.models;
+                filteredModels = data.models;
+                displayOpenRouterModels(data.models);
+                updateStats(data.models);
+                updateSyncStatus(data.count);
+                
+                // Show success message
+                showNotification('Successfully fetched ' + data.count + ' models from OpenRouter', 'success');
+            } else {
+                showNotification('Error: ' + data.error, 'error');
+            }
+        } catch (error) {
+            showNotification('Failed to fetch models: ' + error.message, 'error');
+        } finally {
+            // Restore button
+            btn.innerHTML = originalText;
+            btn.disabled = false;
+        }
+    }
+
+    function displayOpenRouterModels(models) {
+        const tableBody = document.getElementById('models-tbody');
+        tableBody.innerHTML = '';
+        
+        const modelsToShow = models.slice(0, 50); // Show first 50 models
+        
+        modelsToShow.forEach(model => {
+            const row = createModelRow(model);
+            tableBody.appendChild(row);
+        });
+
+        // Re-render Lucide icons
+        lucide.createIcons();
+    }
+
+    function createModelRow(model) {
+        const row = document.createElement('tr');
+        row.className = 'hover:bg-gray-50';
+        row.dataset.modelId = model.id;
+        row.dataset.provider = model.top_provider || 'Unknown';
+        
+        const provider = model.top_provider || 'Unknown';
+        const contextLength = model.context_length || 0;
+        const promptPrice = parseFloat(model.pricing.prompt || 0) * 1000; // Convert to per 1K tokens
+        const completionPrice = parseFloat(model.pricing.completion || 0) * 1000;
+        
+        row.innerHTML = `
+            <td class="px-6 py-4 whitespace-nowrap">
+                <div class="flex items-center">
+                    <div class="flex-shrink-0 h-8 w-8">
+                        <div class="h-8 w-8 rounded-full bg-gradient-to-r from-purple-400 to-pink-400 flex items-center justify-center">
+                            <i data-lucide="cpu" class="w-4 h-4 text-white"></i>
+                        </div>
+                    </div>
+                    <div class="ml-4">
+                        <div class="text-sm font-medium text-gray-900">${model.name}</div>
+                        <div class="text-sm text-gray-500">${model.id}</div>
+                    </div>
+                </div>
+            </td>
+            <td class="px-6 py-4 whitespace-nowrap">
+                <div class="text-sm text-gray-900">${provider}</div>
+            </td>
+            <td class="px-6 py-4 whitespace-nowrap">
+                <div class="text-sm text-gray-900">$${promptPrice.toFixed(4)}/1K input</div>
+                <div class="text-sm text-gray-500">$${completionPrice.toFixed(4)}/1K output</div>
+            </td>
+            <td class="px-6 py-4 whitespace-nowrap">
+                <div class="text-sm text-gray-900">${contextLength.toLocaleString()}</div>
+                <div class="text-sm text-gray-500">tokens</div>
+            </td>
+            <td class="px-6 py-4 whitespace-nowrap">
+                <span class="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-green-100 text-green-800">
+                    <div class="w-1.5 h-1.5 bg-green-400 rounded-full mr-1.5"></div>
+                    Available
+                </span>
+            </td>
+            <td class="px-6 py-4 whitespace-nowrap text-right text-sm font-medium">
+                <div class="flex items-center space-x-2">
+                    <button class="text-indigo-600 hover:text-indigo-900 p-1 rounded"
+                            onclick="showModelDetails('${model.id}')"
+                            title="View Details">
+                        <i data-lucide="info" class="w-4 h-4"></i>
+                    </button>
+                    <button class="text-green-600 hover:text-green-900 p-1 rounded"
+                            onclick="enableModelForUsers('${model.id}')"
+                            title="Enable for Users">
+                        <i data-lucide="check" class="w-4 h-4"></i>
+                    </button>
+                </div>
+            </td>
+        `;
+        
+        return row;
+    }
+
+    function filterModels(searchTerm) {
+        if (!openRouterModels.length) return;
+        
+        const providerFilter = document.getElementById('provider-filter').value;
+        
+        let filtered = openRouterModels.filter(model => {
+            const matchesSearch = !searchTerm || 
+                model.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
+                model.id.toLowerCase().includes(searchTerm.toLowerCase()) ||
+                model.description.toLowerCase().includes(searchTerm.toLowerCase());
+            
+            const matchesProvider = !providerFilter ||
+                (model.top_provider && model.top_provider.toLowerCase().includes(providerFilter));
+            
+            return matchesSearch && matchesProvider;
+        });
+        
+        filteredModels = filtered;
+        displayOpenRouterModels(filtered);
+    }
+
+    function filterByProvider(provider) {
+        const searchTerm = document.getElementById('model-search').value;
+        filterModels(searchTerm);
+    }
+
+    function updateStats(models) {
+        const activeModels = models.length;
+        const providers = new Set(models.map(m => m.top_provider || 'Unknown')).size;
+        
+        // Update stat cards
+        const activeEl = document.querySelector('[data-stat="active-models"]');
+        const providersEl = document.querySelector('[data-stat="total-providers"]');
+        
+        if (activeEl) activeEl.textContent = activeModels;
+        if (providersEl) providersEl.textContent = providers;
+    }
+
+    function updateSyncStatus(count) {
+        const syncStatus = document.getElementById('sync-status');
+        syncStatus.innerHTML = `
+            <div class="bg-green-50 border border-green-200 rounded-lg p-4">
+                <div class="flex items-center">
+                    <div class="flex-shrink-0">
+                        <i data-lucide="check-circle" class="w-5 h-5 text-green-400"></i>
+                    </div>
+                    <div class="ml-3">
+                        <p class="text-sm text-green-700">
+                            Successfully fetched <span class="font-medium">${count} models</span> from OpenRouter
+                            • Last updated: <span class="font-medium">just now</span>
+                        </p>
+                    </div>
+                </div>
+            </div>
+        `;
+        lucide.createIcons();
+    }
+
+    function showModelDetails(modelId) {
+        const model = openRouterModels.find(m => m.id === modelId);
+        if (!model) return;
+        
+        const modal = `
+            <div class="fixed inset-0 bg-gray-600 bg-opacity-50 overflow-y-auto h-full w-full z-50" id="model-modal">
+                <div class="relative top-20 mx-auto p-5 border w-11/12 md:w-3/4 lg:w-1/2 shadow-lg rounded-md bg-white">
+                    <div class="mt-3">
+                        <div class="flex items-center justify-between mb-4">
+                            <h3 class="text-lg font-medium text-gray-900">${model.name}</h3>
+                            <button onclick="closeModal()" class="text-gray-400 hover:text-gray-600">
+                                <i data-lucide="x" class="w-6 h-6"></i>
+                            </button>
+                        </div>
+                        <div class="space-y-4">
+                            <div>
+                                <h4 class="font-medium text-gray-700">Model ID</h4>
+                                <p class="text-sm text-gray-600">${model.id}</p>
+                            </div>
+                            <div>
+                                <h4 class="font-medium text-gray-700">Description</h4>
+                                <p class="text-sm text-gray-600">${model.description || 'No description available'}</p>
+                            </div>
+                            <div class="grid grid-cols-2 gap-4">
+                                <div>
+                                    <h4 class="font-medium text-gray-700">Context Length</h4>
+                                    <p class="text-sm text-gray-600">${model.context_length?.toLocaleString() || 'Unknown'} tokens</p>
+                                </div>
+                                <div>
+                                    <h4 class="font-medium text-gray-700">Provider</h4>
+                                    <p class="text-sm text-gray-600">${model.top_provider || 'Unknown'}</p>
+                                </div>
+                            </div>
+                            <div class="grid grid-cols-2 gap-4">
+                                <div>
+                                    <h4 class="font-medium text-gray-700">Prompt Pricing</h4>
+                                    <p class="text-sm text-gray-600">$${(parseFloat(model.pricing.prompt || 0) * 1000).toFixed(6)}/1K tokens</p>
+                                </div>
+                                <div>
+                                    <h4 class="font-medium text-gray-700">Completion Pricing</h4>
+                                    <p class="text-sm text-gray-600">$${(parseFloat(model.pricing.completion || 0) * 1000).toFixed(6)}/1K tokens</p>
+                                </div>
+                            </div>
+                        </div>
+                        <div class="mt-6 flex justify-end space-x-3">
+                            <button onclick="closeModal()" class="px-4 py-2 bg-gray-300 text-gray-700 rounded-md hover:bg-gray-400">
+                                Close
+                            </button>
+                            <button onclick="enableModelForUsers('${model.id}')" class="px-4 py-2 bg-indigo-600 text-white rounded-md hover:bg-indigo-700">
+                                Enable for Users
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        `;
+        
+        document.getElementById('modal-container').innerHTML = modal;
+        lucide.createIcons(); // Re-render icons
+    }
+
+    async function enableModelForUsers(modelId) {
+        try {
+            const response = await fetch(`/admin/models/${modelId}/enable`, {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json'
+                }
+            });
+            
+            const data = await response.json();
+            
+            if (data.success) {
+                showNotification(data.message, 'success');
+                // Refresh the page to show updated status
+                setTimeout(() => {
+                    window.location.reload();
+                }, 1500);
+            } else {
+                showNotification(`Error: ${data.message}`, 'error');
+            }
+        } catch (error) {
+            showNotification(`Failed to enable model: ${error.message}`, 'error');
+        }
+        
+        closeModal();
+    }
+
+    function closeModal() {
+        document.getElementById('modal-container').innerHTML = '';
+    }
+
+    function showStoredModelDetails(modelId) {
+        // Simple modal for stored models
+        const modal = `
+            <div class="fixed inset-0 bg-gray-600 bg-opacity-50 overflow-y-auto h-full w-full z-50" id="model-modal">
+                <div class="relative top-20 mx-auto p-5 border w-11/12 md:w-3/4 lg:w-1/2 shadow-lg rounded-md bg-white">
+                    <div class="mt-3">
+                        <div class="flex items-center justify-between mb-4">
+                            <h3 class="text-lg font-medium text-gray-900">${modelId}</h3>
+                            <button onclick="closeModal()" class="text-gray-400 hover:text-gray-600">
+                                <i data-lucide="x" class="w-6 h-6"></i>
+                            </button>
+                        </div>
+                        <div class="space-y-4">
+                            <div>
+                                <h4 class="font-medium text-gray-700">Model ID</h4>
+                                <p class="text-sm text-gray-600">${modelId}</p>
+                            </div>
+                            <div>
+                                <h4 class="font-medium text-gray-700">Status</h4>
+                                <p class="text-sm text-gray-600">Stored in database</p>
+                            </div>
+                        </div>
+                        <div class="mt-6 flex justify-end space-x-3">
+                            <button onclick="closeModal()" class="px-4 py-2 bg-gray-300 text-gray-700 rounded-md hover:bg-gray-400">
+                                Close
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        `;
+        
+        document.getElementById('modal-container').innerHTML = modal;
+        lucide.createIcons(); // Re-render icons
+    }
+
+    function showNotification(message, type = 'info') {
+        const notification = document.createElement('div');
+        notification.className = `fixed top-4 right-4 z-50 px-4 py-3 rounded-md shadow-lg ${
+            type === 'success' ? 'bg-green-100 text-green-800 border border-green-200' :
+            type === 'error' ? 'bg-red-100 text-red-800 border border-red-200' :
+            'bg-blue-100 text-blue-800 border border-blue-200'
+        }`;
+        notification.textContent = message;
+        
+        document.body.appendChild(notification);
+        
+        setTimeout(() => {
+            notification.remove();
+        }, 5000);
+    }
+
+    async function disableModelForUsers(modelId) {
+        try {
+            const response = await fetch(`/admin/models/${modelId}/disable`, {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json'
+                }
+            });
+            
+            const data = await response.json();
+            
+            if (data.success) {
+                showNotification(data.message, 'success');
+                // Refresh the page to show updated status
+                setTimeout(() => {
+                    window.location.reload();
+                }, 1500);
+            } else {
+                showNotification(`Error: ${data.message}`, 'error');
+            }
+        } catch (error) {
+            showNotification(`Failed to disable model: ${error.message}`, 'error');
+        }
+        
+        closeModal();
+    }
+    
+    // Load stored models stats on page load
+    document.addEventListener('DOMContentLoaded', function() {
+        // Update stats with current database models
+        const totalModels = {{ total_models | default(0) }};
+        const activeModels = {{ active_models | default(0) }};
+        
+        const activeEl = document.querySelector('[data-stat="active-models"]');
+        const providersEl = document.querySelector('[data-stat="total-providers"]');
+        
+        if (activeEl) activeEl.textContent = totalModels;
+        
+        // Calculate unique providers from current models
+        const providerSet = new Set();
+        {% for model in models %}
+        providerSet.add('{{ model.provider | title }}');
+        {% endfor %}
+        if (providersEl) providersEl.textContent = providerSet.size;
+        
+        // Show sync status if models exist
+        {% if models and models|length > 0 %}
+        updateSyncStatus({{ models|length }});
+        {% endif %}
+        
+        // Re-render icons for database models
+        lucide.createIcons();
+    });
+</script>
+{% endblock %}

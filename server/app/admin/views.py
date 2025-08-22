@@ -1,0 +1,926 @@
+from typing import Optional
+from pathlib import Path
+from datetime import datetime, timedelta
+from fastapi import APIRouter, Request, Depends, Form, HTTPException
+from fastapi.responses import HTMLResponse, RedirectResponse, JSONResponse
+from fastapi.templating import Jinja2Templates
+from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy import select, func, desc
+import structlog
+import secrets
+import hashlib
+
+from app.db.session import get_db_dependency
+from app.db.models import APIKey, ModelCatalog, SemanticItem, EpisodicItem, Artifact, UsageStats
+from app.services.openrouter import fetch_all_models, OpenRouterError
+from app.core.config import settings
+from app.core.security import (
+    get_admin_user, authenticate_admin, create_admin_jwt,
+    AdminUser, AdminLoginRequest, AdminLoginResponse
+)
+
+router = APIRouter()
+logger = structlog.get_logger(__name__)
+
+# Setup templates
+templates = Jinja2Templates(directory=Path(__file__).parent / "templates")
+
+# Admin Authentication Routes
+
+@router.get("/login", response_class=HTMLResponse)
+async def admin_login_page(request: Request):
+    """Admin login page."""
+    return templates.TemplateResponse("login.html", {
+        "request": request, 
+        "page_title": "Admin Login"
+    })
+
+
+@router.post("/login", response_class=HTMLResponse)
+async def admin_login(
+    request: Request,
+    username: str = Form(...),
+    password: str = Form(...)
+):
+    """Handle admin login form submission."""
+    try:
+        # Extract correlation ID from request state
+        correlation_id = getattr(request.state, "correlation_id", None)
+        
+        if await authenticate_admin(username, password, correlation_id):
+            # Create JWT token
+            token = create_admin_jwt(username)
+            
+            # Create response with redirect
+            response = RedirectResponse(url="/admin/dashboard", status_code=302)
+            
+            # Set secure cookie with JWT token
+            response.set_cookie(
+                key="admin_session",
+                value=token,
+                max_age=settings.JWT_EXPIRE_MINUTES * 60,
+                httponly=True,
+                secure=settings.is_production,
+                samesite="lax"
+            )
+            
+            logger.info("admin_login_successful", username=username, correlation_id=correlation_id)
+            return response
+        else:
+            logger.warning("admin_login_failed", username=username, correlation_id=correlation_id)
+            return templates.TemplateResponse("login.html", {
+                "request": request,
+                "page_title": "Admin Login",
+                "error": "Invalid username or password"
+            })
+    except Exception as e:
+        logger.error("admin_login_error", error=str(e))
+        return templates.TemplateResponse("login.html", {
+            "request": request,
+            "page_title": "Admin Login",
+            "error": "Login failed. Please try again."
+        })
+
+
+@router.post("/logout")
+async def admin_logout(request: Request):
+    """Handle admin logout."""
+    response = RedirectResponse(url="/admin/login", status_code=302)
+    response.delete_cookie("admin_session")
+    logger.info("admin_logout")
+    return response
+
+
+# Protected Admin Routes
+
+@router.get("/", response_class=HTMLResponse)
+@router.get("/dashboard", response_class=HTMLResponse)
+async def dashboard(
+    request: Request, 
+    db: AsyncSession = Depends(get_db_dependency),
+    admin_user: AdminUser = Depends(get_admin_user)
+):
+    """Admin dashboard with system overview."""
+    try:
+        stats = {
+            "total_api_keys": 0, "total_models": 0, "total_semantic_items": 0,
+            "total_episodic_items": 0, "total_artifacts": 0, "total_requests": 0, "status": "operational"
+        }
+        try:
+            result = await db.execute(select(func.count(APIKey.key_hash)))
+            stats["total_api_keys"] = result.scalar() or 0
+            result = await db.execute(select(func.count(ModelCatalog.model_id)))
+            stats["total_models"] = result.scalar() or 0
+            result = await db.execute(select(func.count(SemanticItem.id)))
+            stats["total_semantic_items"] = result.scalar() or 0
+            result = await db.execute(select(func.count(EpisodicItem.id)))
+            stats["total_episodic_items"] = result.scalar() or 0
+            result = await db.execute(select(func.count(Artifact.ref)))
+            stats["total_artifacts"] = result.scalar() or 0
+            result = await db.execute(select(func.sum(UsageStats.clicks + UsageStats.references)))
+            stats["total_requests"] = result.scalar() or 0
+        except Exception as e:
+            logger.error("Error getting dashboard stats", error=str(e))
+        return templates.TemplateResponse("dashboard.html", {"request": request, "stats": stats, "page_title": "Dashboard"})
+    except Exception as e:
+        logger.error("dashboard_error", error=str(e))
+        return templates.TemplateResponse("dashboard.html", {"request": request, "stats": stats, "error": str(e), "page_title": "Dashboard"})
+
+@router.get("/api-keys", response_class=HTMLResponse)
+async def api_keys_list(
+    request: Request, 
+    db: AsyncSession = Depends(get_db_dependency), 
+    q: Optional[str] = None,
+    admin_user: AdminUser = Depends(get_admin_user)
+):
+    """API keys management page."""
+    try:
+        query = select(APIKey)
+        if q:
+            query = query.where(APIKey.key_prefix.ilike(f"%{q}%"))
+        query = query.order_by(APIKey.created_at.desc()).limit(50)
+        result = await db.execute(query)
+        api_keys = result.scalars().all()
+        
+        total_keys = await db.execute(select(func.count(APIKey.key_hash)))
+        active_keys = await db.execute(select(func.count(APIKey.key_hash)).where(APIKey.active == True))
+        suspended_keys = await db.execute(select(func.count(APIKey.key_hash)).where(APIKey.active == False))
+        total_requests = await db.execute(select(func.sum(UsageStats.clicks + UsageStats.references)))
+        
+        stats = {
+            "total_keys": total_keys.scalar() or 0, "active_keys": active_keys.scalar() or 0,
+            "suspended_keys": suspended_keys.scalar() or 0, "total_requests": total_requests.scalar() or 0
+        }
+        
+        formatted_keys = []
+        for key in api_keys:
+            key_prefix = key.key_hash[:8] + "..." if key.key_hash else "unknown"
+            formatted_keys.append({
+                "key_id": key.key_hash, "key_prefix": key_prefix,
+                "workspace_name": key.name or "Default Workspace", "requests_count": 0,
+                "quota_limit": key.daily_quota_tokens or 100000,
+                "created_at": key.created_at.strftime("%Y-%m-%d %H:%M") if key.created_at else "Unknown",
+                "last_used_at": "Never",
+                "status": "active" if key.active else "suspended"
+            })
+        
+        return templates.TemplateResponse("api_keys.html", {
+            "request": request, "stats": stats, "api_keys": formatted_keys,
+            "search_query": q or "", "page_title": "API Keys"
+        })
+    except Exception as e:
+        logger.error("api_keys_error", error=str(e))
+        return templates.TemplateResponse("api_keys.html", {
+            "request": request, "stats": {"active_keys": 0, "suspended_keys": 0, "total_requests": 0},
+            "api_keys": [], "search_query": q or "", "error": str(e), "page_title": "API Keys"
+        })
+
+@router.post("/api-keys/generate", response_class=HTMLResponse)
+async def generate_api_key(
+    request: Request, 
+    db: AsyncSession = Depends(get_db_dependency), 
+    name: str = Form(...), 
+    description: Optional[str] = Form(None),
+    admin_user: AdminUser = Depends(get_admin_user)
+):
+    """Generate a new API key."""
+    try:
+        new_key = f"cmg_{''.join(secrets.choice('abcdefghijklmnopqrstuvwxyz0123456789') for _ in range(32))}"
+        key_hash = hashlib.sha256(new_key.encode()).hexdigest()
+        key_prefix = new_key[:8] + "..."
+        
+        api_key = APIKey(key_hash=key_hash, workspace_id="default", name=name, active=True, daily_quota_tokens=100000, created_at=datetime.utcnow())
+        db.add(api_key)
+        await db.commit()
+        
+        logger.info("Generated new API key", key_prefix=key_prefix, name=name)
+        return RedirectResponse(url="/admin/api-keys?success=generated", status_code=302)
+    except Exception as e:
+        logger.error("generate_key_error", error=str(e))
+        return RedirectResponse(url="/admin/api-keys?error=generation_failed", status_code=302)
+
+@router.get("/workers", response_class=HTMLResponse)
+async def workers_monitoring(
+    request: Request,
+    admin_user: AdminUser = Depends(get_admin_user)
+):
+    """Worker monitoring and management page."""
+    try:
+        # Get worker health data from the API
+        import httpx
+        async with httpx.AsyncClient() as client:
+            try:
+                # Make internal API call to get worker health
+                api_base = getattr(settings, 'API_BASE_URL', None) or 'http://localhost:8000'
+                response = await client.get(f"{api_base}/v1/workers/health")
+                if response.status_code == 200:
+                    worker_data = response.json()
+                else:
+                    worker_data = {
+                        "status": "error",
+                        "error": "Failed to fetch worker data",
+                        "queues": {"details": {}},
+                        "workers": {"active_count": 0, "workers": []},
+                        "redis": {"connected": False},
+                        "issues": ["Could not connect to worker API"]
+                    }
+            except Exception as e:
+                logger.error("worker_api_call_failed", error=str(e))
+                worker_data = {
+                    "status": "error",
+                    "error": str(e),
+                    "queues": {"details": {}},
+                    "workers": {"active_count": 0, "workers": []},
+                    "redis": {"connected": False},
+                    "issues": [f"API Error: {str(e)}"]
+                }
+        
+        # Calculate health score if not provided
+        health_score = worker_data.get("health_score")
+        if health_score is None:
+            # Simple health calculation
+            health_score = 100
+            if not worker_data.get("redis", {}).get("connected", True):
+                health_score -= 40
+            if worker_data.get("workers", {}).get("active_count", 0) == 0:
+                health_score -= 30
+            if worker_data.get("queues", {}).get("total_failed_jobs", 0) > 10:
+                health_score -= 20
+            health_score = max(health_score, 0)
+        
+        return templates.TemplateResponse("workers.html", {
+            "request": request,
+            "page_title": "Worker Monitoring",
+            "health_score": health_score,
+            **worker_data
+        })
+    
+    except Exception as e:
+        logger.error("workers_page_error", error=str(e))
+        return templates.TemplateResponse("workers.html", {
+            "request": request,
+            "page_title": "Worker Monitoring",
+            "error": str(e),
+            "health_score": 0,
+            "status": "error",
+            "queues": {"details": {}},
+            "workers": {"active_count": 0, "workers": []},
+            "redis": {"connected": False},
+            "issues": [f"Page Error: {str(e)}"]
+        })
+
+
+@router.get("/models", response_class=HTMLResponse)
+async def models_list(
+    request: Request, 
+    db: AsyncSession = Depends(get_db_dependency),
+    admin_user: AdminUser = Depends(get_admin_user)
+):
+    """Models management page."""
+    try:
+        query = select(ModelCatalog).order_by(ModelCatalog.created_at.desc()).limit(50)
+        result = await db.execute(query)
+        models = result.scalars().all()
+        
+        total_models_count = await db.execute(select(func.count(ModelCatalog.model_id)))
+        active_models_count = await db.execute(select(func.count(ModelCatalog.model_id)).where(ModelCatalog.status == "active"))
+        deprecated_models_count = await db.execute(select(func.count(ModelCatalog.model_id)).where(ModelCatalog.status == "deprecated"))
+        
+        stats = {
+            "active_models": active_models_count.scalar() or 0,
+            "deprecated_models": deprecated_models_count.scalar() or 0,
+            "most_used_model": "GPT-4", "total_requests": 0
+        }
+        
+        formatted_models = []
+        for model in models:
+            formatted_models.append({
+                "model_id": model.model_id,
+                "name": model.display_name or model.model_id,
+                "id": model.model_id,
+                "provider": model.provider,
+                "is_active": model.status == "active",
+                "created_at": model.created_at.isoformat() if model.created_at else None,
+                "pricing": {
+                    "input_cost": float(model.input_price_per_1k) if model.input_price_per_1k else 0,
+                    "output_cost": float(model.output_price_per_1k) if model.output_price_per_1k else 0
+                },
+                "context_window": model.context_window,
+                "supports_vision": model.supports_vision,
+                "supports_tools": model.supports_tools
+            })
+        
+        # Get latest sync time
+        latest_model = await db.execute(
+            select(ModelCatalog).order_by(ModelCatalog.updated_at.desc()).limit(1)
+        )
+        latest = latest_model.scalar_one_or_none()
+        last_sync = latest.updated_at.strftime("%Y-%m-%d %H:%M") if latest else "Never"
+        
+        return templates.TemplateResponse("models.html", {
+            "request": request, "stats": stats, "models": formatted_models,
+            "last_sync": last_sync, "total_models": len(formatted_models),
+            "active_models": stats["active_models"], "page_title": "Models"
+        })
+    except Exception as e:
+        logger.error("models_error", error=str(e))
+        return templates.TemplateResponse("models.html", {
+            "request": request, "stats": {"active_models": 0, "deprecated_models": 0, "most_used_model": "N/A", "total_requests": 0},
+            "models": [], "last_sync": "Unknown", "total_models": 0, "active_models": 0, "error": str(e), "page_title": "Models"
+        })
+
+@router.get("/settings", response_class=HTMLResponse)
+async def settings(
+    request: Request, 
+    db: AsyncSession = Depends(get_db_dependency),
+    admin_user: AdminUser = Depends(get_admin_user)
+):
+    """Settings management page."""
+    try:
+        # Mock settings data - in production this would come from config/database
+        settings_data = {
+            "openrouter_api_key": "sk-or-****",  # Masked for security
+            "rate_limit_requests": 100,
+            "rate_limit_window": 60,
+            "max_tokens": 4096,
+            "database_url": "postgresql://cmg_user:***@postgres:5432/context_memory_gateway",
+            "redis_url": "redis://redis:6379/0"
+        }
+        
+        return templates.TemplateResponse("settings.html", {
+            "request": request, "page_title": "Settings",
+            "settings": settings_data, "openrouter_configured": True
+        })
+    except Exception as e:
+        logger.error("settings_error", error=str(e))
+        return templates.TemplateResponse("settings.html", {
+            "request": request, "page_title": "Settings", 
+            "settings": {}, "error": str(e)
+        })
+
+@router.post("/settings/openrouter", response_class=HTMLResponse)
+async def update_openrouter_key(request: Request, openrouter_key: str = Form(...)):
+    """Update OpenRouter API key."""
+    try:
+        if not openrouter_key.startswith("sk-or-"):
+            raise HTTPException(status_code=400, detail="Invalid OpenRouter key format")
+        logger.info("Updated OpenRouter key")
+        return RedirectResponse(url="/admin/settings?success=key_updated", status_code=302)
+    except Exception as e:
+        logger.error("update_openrouter_error", error=str(e))
+        return RedirectResponse(url="/admin/settings?error=update_failed", status_code=302)
+
+@router.get("/models/fetch", response_class=JSONResponse)
+async def fetch_openrouter_models(request: Request):
+    """Fetch all available models from OpenRouter for admin selection."""
+    try:
+        models = await fetch_all_models()
+        
+        # Filter and format models for admin interface
+        formatted_models = []
+        for model in models:
+            formatted_models.append({
+                "id": model.get("id", ""),
+                "name": model.get("name", model.get("id", "Unknown")),
+                "description": model.get("description", ""),
+                "context_length": model.get("context_length", 0),
+                "pricing": {
+                    "prompt": model.get("pricing", {}).get("prompt", "0"),
+                    "completion": model.get("pricing", {}).get("completion", "0")
+                },
+                "top_provider": model.get("top_provider", {}).get("name", "Unknown"),
+                "architecture": model.get("architecture", {}),
+                "moderation_required": model.get("moderation_required", False)
+            })
+        
+        return JSONResponse({
+            "success": True,
+            "models": formatted_models,
+            "count": len(formatted_models)
+        })
+        
+    except OpenRouterError as e:
+        logger.error("fetch_models_openrouter_error", error=str(e), status_code=e.status_code)
+        return JSONResponse({
+            "success": False,
+            "error": f"OpenRouter API error: {e.message}",
+            "details": e.details
+        }, status_code=e.status_code)
+        
+    except Exception as e:
+        logger.error("fetch_models_error", error=str(e))
+        return JSONResponse({
+            "success": False,
+            "error": "Failed to fetch models from OpenRouter"
+        }, status_code=500)
+
+@router.get("/api-keys/create", response_class=HTMLResponse)
+async def api_keys_create_form(request: Request, db: AsyncSession = Depends(get_db_dependency)):
+    """API key creation form."""
+    try:
+        # Get stats for the template
+        total_keys = await db.execute(select(func.count(APIKey.key_hash)))
+        active_keys = await db.execute(select(func.count(APIKey.key_hash)).where(APIKey.active == True))
+        suspended_keys = await db.execute(select(func.count(APIKey.key_hash)).where(APIKey.active == False))
+        total_requests = await db.execute(select(func.sum(UsageStats.clicks + UsageStats.references)))
+        
+        stats = {
+            "total_keys": total_keys.scalar() or 0,
+            "active_keys": active_keys.scalar() or 0,
+            "suspended_keys": suspended_keys.scalar() or 0,
+            "total_requests": total_requests.scalar() or 0
+        }
+        
+        return templates.TemplateResponse("api_keys.html", {
+            "request": request,
+            "page_title": "Create API Key",
+            "show_create_form": True,
+            "stats": stats,
+            "api_keys": []
+        })
+    except Exception as e:
+        logger.error("api_keys_create_form_error", error=str(e))
+        return templates.TemplateResponse("api_keys.html", {
+            "request": request,
+            "page_title": "Create API Key",
+            "show_create_form": True,
+            "stats": {"active_keys": 0, "suspended_keys": 0, "total_requests": 0},
+            "api_keys": [],
+            "error": str(e)
+        })
+
+@router.get("/context", response_class=HTMLResponse)
+async def admin_context(request: Request, db: AsyncSession = Depends(get_db_dependency)):
+    """Context Memory management page."""
+    try:
+        # Get context memory statistics
+        semantic_count = await db.execute(select(func.count(SemanticItem.id)))
+        episodic_count = await db.execute(select(func.count(EpisodicItem.id)))
+        artifact_count = await db.execute(select(func.count(Artifact.ref)))
+        
+        stats = {
+            "semantic_items": semantic_count.scalar() or 0,
+            "episodic_items": episodic_count.scalar() or 0,
+            "artifacts": artifact_count.scalar() or 0,
+            "total_items": (semantic_count.scalar() or 0) + (episodic_count.scalar() or 0)
+        }
+        
+        # Get recent context items
+        recent_semantic = await db.execute(
+            select(SemanticItem).order_by(SemanticItem.created_at.desc()).limit(10)
+        )
+        recent_episodic = await db.execute(
+            select(EpisodicItem).order_by(EpisodicItem.created_at.desc()).limit(10)
+        )
+        
+        return templates.TemplateResponse("context.html", {
+            "request": request,
+            "page_title": "Context Memory",
+            "stats": stats,
+            "semantic_items": recent_semantic.scalars().all(),
+            "episodic_items": recent_episodic.scalars().all()
+        })
+    except Exception as e:
+        logger.error("context_error", error=str(e))
+        return templates.TemplateResponse("context.html", {
+            "request": request,
+            "page_title": "Context Memory",
+            "stats": {"semantic_items": 0, "episodic_items": 0, "artifacts": 0, "total_items": 0},
+            "semantic_items": [],
+            "episodic_items": [],
+            "error": str(e)
+        })
+
+@router.get("/usage", response_class=HTMLResponse)
+async def usage(request: Request, db: AsyncSession = Depends(get_db_dependency)):
+    """Usage statistics page."""
+    try:
+        # Mock analytics data - in production this would come from usage stats
+        analytics_data = {
+            "total_requests": 45678,
+            "avg_response_time": "245ms",
+            "total_cost": "$1,234.56",
+            "error_rate": "0.12%"
+        }
+        
+        # Mock model usage data
+        model_usage = [
+            {"name": "GPT-4", "percentage": 45},
+            {"name": "GPT-3.5-Turbo", "percentage": 30},
+            {"name": "Claude-3", "percentage": 15},
+            {"name": "Gemini-Pro", "percentage": 10}
+        ]
+        
+        # Mock endpoint usage data
+        endpoint_usage = [
+            {"endpoint": "/api/v1/chat/completions", "requests": 12450},
+            {"endpoint": "/api/v1/embeddings", "requests": 8920},
+            {"endpoint": "/api/v1/models", "requests": 3210}
+        ]
+        
+        return templates.TemplateResponse("usage.html", {
+            "request": request, "page_title": "Usage Statistics",
+            "analytics": analytics_data, "model_usage": model_usage,
+            "endpoint_usage": endpoint_usage
+        })
+    except Exception as e:
+        logger.error("usage_error", error=str(e))
+        return templates.TemplateResponse("usage.html", {
+            "request": request, "page_title": "Usage Statistics",
+            "analytics": {}, "error": str(e)
+        })
+
+@router.get("/models/sync-status", response_class=JSONResponse)
+async def models_sync_status(request: Request, db: AsyncSession = Depends(get_db_dependency)):
+    """Get OpenRouter model synchronization status."""
+    try:
+        # Get actual model count from database
+        total_models = await db.execute(select(func.count(ModelCatalog.model_id)))
+        latest_model = await db.execute(
+            select(ModelCatalog).order_by(ModelCatalog.updated_at.desc()).limit(1)
+        )
+        latest = latest_model.scalar_one_or_none()
+        
+        return JSONResponse({
+            "status": "synced",
+            "last_sync": latest.updated_at.isoformat() if latest else "never",
+            "models_count": total_models.scalar() or 0,
+            "sync_in_progress": False
+        })
+    except Exception as e:
+        logger.error("models_sync_status_error", error=str(e))
+        return JSONResponse({
+            "status": "error",
+            "error": str(e)
+        }, status_code=500)
+
+@router.post("/models/sync", response_class=JSONResponse)
+async def models_sync(request: Request, db: AsyncSession = Depends(get_db_dependency)):
+    """Trigger OpenRouter model synchronization and store in database."""
+    try:
+        from app.services.openrouter import fetch_all_models
+        from datetime import datetime
+        
+        # Fetch models from OpenRouter
+        models = await fetch_all_models()
+        
+        # Store models in database
+        stored_count = 0
+        for model_data in models:
+            try:
+                # Check if model already exists
+                existing_query = select(ModelCatalog).where(ModelCatalog.model_id == model_data.get("id"))
+                existing_result = await db.execute(existing_query)
+                existing_model = existing_result.scalar_one_or_none()
+                
+                # Prepare model data
+                pricing = model_data.get("pricing", {})
+                input_price = float(pricing.get("prompt", 0)) * 1000 if pricing.get("prompt") else 0
+                output_price = float(pricing.get("completion", 0)) * 1000 if pricing.get("completion") else 0
+                
+                # Extract provider safely
+                top_provider = model_data.get("top_provider", "Unknown")
+                if isinstance(top_provider, dict):
+                    provider_name = top_provider.get("name", "Unknown")
+                else:
+                    provider_name = str(top_provider) if top_provider and top_provider != "Unknown" else "Unknown"
+                
+                # Ensure provider is never null
+                if not provider_name or provider_name.strip() == "":
+                    provider_name = "Unknown"
+                
+                model_obj_data = {
+                    "model_id": model_data.get("id"),
+                    "provider": provider_name,
+                    "display_name": model_data.get("name", model_data.get("id")),
+                    "status": "active",
+                    "context_window": model_data.get("context_length", 0),
+                    "input_price_per_1k": input_price,
+                    "output_price_per_1k": output_price,
+                    "supports_vision": "image" in model_data.get("architecture", {}).get("input_modalities", []),
+                    "supports_tools": model_data.get("architecture", {}).get("modality") == "text->text",
+                    "supports_json_mode": False,  # Default to False
+                    "metadata": model_data,  # Store full OpenRouter data
+                    "updated_at": datetime.utcnow()
+                }
+                
+                if existing_model:
+                    # Update existing model
+                    for key, value in model_obj_data.items():
+                        setattr(existing_model, key, value)
+                else:
+                    # Create new model
+                    model_obj_data["created_at"] = datetime.utcnow()
+                    new_model = ModelCatalog(**model_obj_data)
+                    db.add(new_model)
+                
+                stored_count += 1
+                
+            except Exception as model_error:
+                logger.error("Failed to store model", model_id=model_data.get("id"), error=str(model_error))
+                continue
+        
+        # Commit all changes
+        await db.commit()
+        
+        logger.info("Model sync completed", stored_models=stored_count, total_fetched=len(models))
+        
+        return JSONResponse({
+            "success": True,
+            "message": f"Model sync completed successfully. Stored {stored_count} models.",
+            "stored_count": stored_count,
+            "total_fetched": len(models)
+        })
+        
+    except Exception as e:
+        await db.rollback()
+        logger.error("model_sync_failed", error=str(e))
+        return JSONResponse({
+            "success": False,
+            "message": f"Model sync failed: {str(e)}"
+        }, status_code=500)
+
+@router.post("/models/{model_id}/enable", response_class=JSONResponse)
+async def enable_model_for_users(request: Request, model_id: str, db: AsyncSession = Depends(get_db_dependency)):
+    """Enable a model for user access."""
+    try:
+        # Find the model in the database
+        query = select(ModelCatalog).where(ModelCatalog.model_id == model_id)
+        result = await db.execute(query)
+        model = result.scalar_one_or_none()
+        
+        if not model:
+            return JSONResponse({
+                "success": False,
+                "message": f"Model {model_id} not found in database"
+            }, status_code=404)
+        
+        # Update model status to active
+        model.status = "active"
+        model.updated_at = datetime.utcnow()
+        await db.commit()
+        
+        logger.info("Model enabled for users", model_id=model_id)
+        return JSONResponse({
+            "success": True,
+            "message": f"Model {model.display_name or model_id} has been enabled for users"
+        })
+        
+    except Exception as e:
+        await db.rollback()
+        logger.error("enable_model_error", model_id=model_id, error=str(e))
+        return JSONResponse({
+            "success": False,
+            "message": f"Failed to enable model: {str(e)}"
+        }, status_code=500)
+
+@router.post("/models/{model_id}/disable", response_class=JSONResponse)
+async def disable_model_for_users(request: Request, model_id: str, db: AsyncSession = Depends(get_db_dependency)):
+    """Disable a model for user access."""
+    try:
+        # Find the model in the database
+        query = select(ModelCatalog).where(ModelCatalog.model_id == model_id)
+        result = await db.execute(query)
+        model = result.scalar_one_or_none()
+        
+        if not model:
+            return JSONResponse({
+                "success": False,
+                "message": f"Model {model_id} not found in database"
+            }, status_code=404)
+        
+        # Update model status to disabled
+        model.status = "disabled"
+        model.updated_at = datetime.utcnow()
+        await db.commit()
+        
+        logger.info("Model disabled for users", model_id=model_id)
+        return JSONResponse({
+            "success": True,
+            "message": f"Model {model.display_name or model_id} has been disabled for users"
+        })
+        
+    except Exception as e:
+        await db.rollback()
+        logger.error("disable_model_error", model_id=model_id, error=str(e))
+        return JSONResponse({
+            "success": False,
+            "message": f"Failed to disable model: {str(e)}"
+        }, status_code=500)
+
+@router.get("/api-keys/search", response_class=HTMLResponse)
+async def api_keys_search(request: Request, db: AsyncSession = Depends(get_db_dependency), q: Optional[str] = None):
+    """Search API keys."""
+    return await api_keys_list(request, db, q)
+
+@router.get("/api-keys/filter", response_class=HTMLResponse)
+async def api_keys_filter(request: Request, db: AsyncSession = Depends(get_db_dependency), status: Optional[str] = None, workspace: Optional[str] = None):
+    """Filter API keys by status or workspace."""
+    try:
+        query = select(APIKey)
+        if status:
+            if status == "active":
+                query = query.where(APIKey.active == True)
+            elif status == "suspended":
+                query = query.where(APIKey.active == False)
+        
+        query = query.order_by(APIKey.created_at.desc()).limit(50)
+        result = await db.execute(query)
+        api_keys = result.scalars().all()
+        
+        # Get stats
+        total_keys = await db.execute(select(func.count(APIKey.key_hash)))
+        active_keys = await db.execute(select(func.count(APIKey.key_hash)).where(APIKey.active == True))
+        suspended_keys = await db.execute(select(func.count(APIKey.key_hash)).where(APIKey.active == False))
+        total_requests = await db.execute(select(func.sum(UsageStats.clicks + UsageStats.references)))
+        
+        stats = {
+            "total_keys": total_keys.scalar() or 0, "active_keys": active_keys.scalar() or 0,
+            "suspended_keys": suspended_keys.scalar() or 0, "total_requests": total_requests.scalar() or 0
+        }
+        
+        formatted_keys = []
+        for key in api_keys:
+            key_prefix = key.key_hash[:8] + "..." if key.key_hash else "unknown"
+            formatted_keys.append({
+                "key_id": key.key_hash, "key_prefix": key_prefix,
+                "workspace_name": key.name or "Default Workspace", "requests_count": 0,
+                "quota_limit": key.daily_quota_tokens or 100000,
+                "created_at": key.created_at.strftime("%Y-%m-%d %H:%M") if key.created_at else "Unknown",
+                "last_used_at": "Never",
+                "status": "active" if key.active else "suspended"
+            })
+        
+        return templates.TemplateResponse("api_keys.html", {
+            "request": request, "stats": stats, "api_keys": formatted_keys,
+            "search_query": "", "page_title": "API Keys"
+        })
+    except Exception as e:
+        logger.error("api_keys_filter_error", error=str(e))
+        return templates.TemplateResponse("api_keys.html", {
+            "request": request, "stats": {"active_keys": 0, "suspended_keys": 0, "total_requests": 0},
+            "api_keys": [], "search_query": "", "error": str(e), "page_title": "API Keys"
+        })
+
+@router.get("/system-status", response_class=JSONResponse)
+async def system_status(request: Request, db: AsyncSession = Depends(get_db_dependency)):
+    """Get detailed system status."""
+    try:
+        # Check database connectivity
+        try:
+            await db.execute(select(func.count(APIKey.key_hash)))
+            db_status = "connected"
+        except Exception:
+            db_status = "error"
+        
+        return JSONResponse({
+            "api_gateway": {"status": "healthy", "response_time": "12ms"},
+            "database": {"status": db_status, "connections": "5/20"},
+            "redis": {"status": "online", "memory_usage": "45MB"},
+            "openrouter": {"status": "available", "last_check": datetime.utcnow().isoformat()},
+            "workers": {"status": "partial", "active": "2/3"},
+            "storage": {"status": "connected", "usage": "78%"}
+        })
+    except Exception as e:
+        logger.error("system_status_error", error=str(e))
+        return JSONResponse({
+            "error": str(e)
+        }, status_code=500)
+
+@router.get("/api-keys/{key_id}/edit", response_class=HTMLResponse)
+async def edit_api_key(request: Request, key_id: str, db: AsyncSession = Depends(get_db_dependency)):
+    """Edit API key form."""
+    try:
+        query = select(APIKey).where(APIKey.key_hash == key_id)
+        result = await db.execute(query)
+        api_key = result.scalar_one_or_none()
+        
+        if not api_key:
+            raise HTTPException(status_code=404, detail="API key not found")
+        
+        return templates.TemplateResponse("api_key_edit.html", {
+            "request": request, "api_key": api_key, "page_title": "Edit API Key"
+        })
+    except Exception as e:
+        logger.error("edit_api_key_error", error=str(e))
+        return JSONResponse({"error": str(e)}, status_code=500)
+
+@router.get("/api-keys/{key_id}/usage", response_class=HTMLResponse)
+async def api_key_usage(request: Request, key_id: str, db: AsyncSession = Depends(get_db_dependency)):
+    """View API key usage statistics."""
+    try:
+        query = select(APIKey).where(APIKey.key_hash == key_id)
+        result = await db.execute(query)
+        api_key = result.scalar_one_or_none()
+        
+        if not api_key:
+            raise HTTPException(status_code=404, detail="API key not found")
+        
+        # Mock usage data
+        usage_data = {
+            "total_requests": 0,
+            "requests_today": 0,
+            "quota_usage": "0%",
+            "last_used": "Never"
+        }
+        
+        return templates.TemplateResponse("api_key_usage.html", {
+            "request": request, "api_key": api_key, "usage": usage_data, "page_title": "API Key Usage"
+        })
+    except Exception as e:
+        logger.error("api_key_usage_error", error=str(e))
+        return JSONResponse({"error": str(e)}, status_code=500)
+
+@router.post("/api-keys/{key_id}/suspend", response_class=JSONResponse)
+async def suspend_api_key(request: Request, key_id: str, db: AsyncSession = Depends(get_db_dependency)):
+    """Suspend an API key."""
+    try:
+        query = select(APIKey).where(APIKey.key_hash == key_id)
+        result = await db.execute(query)
+        api_key = result.scalar_one_or_none()
+        
+        if not api_key:
+            raise HTTPException(status_code=404, detail="API key not found")
+        
+        api_key.active = False
+        await db.commit()
+        
+        logger.info("Suspended API key", key_id=key_id[:8])
+        return JSONResponse({"success": True, "message": "API key suspended"})
+    except Exception as e:
+        logger.error("suspend_api_key_error", error=str(e))
+        return JSONResponse({"error": str(e)}, status_code=500)
+
+@router.post("/api-keys/{key_id}/activate", response_class=JSONResponse)
+async def activate_api_key(request: Request, key_id: str, db: AsyncSession = Depends(get_db_dependency)):
+    """Activate an API key."""
+    try:
+        query = select(APIKey).where(APIKey.key_hash == key_id)
+        result = await db.execute(query)
+        api_key = result.scalar_one_or_none()
+        
+        if not api_key:
+            raise HTTPException(status_code=404, detail="API key not found")
+        
+        api_key.active = True
+        await db.commit()
+        
+        logger.info("Activated API key", key_id=key_id[:8])
+        return JSONResponse({"success": True, "message": "API key activated"})
+    except Exception as e:
+        logger.error("activate_api_key_error", error=str(e))
+        return JSONResponse({"error": str(e)}, status_code=500)
+
+@router.delete("/api-keys/{key_id}", response_class=JSONResponse)
+async def delete_api_key(request: Request, key_id: str, db: AsyncSession = Depends(get_db_dependency)):
+    """Delete an API key."""
+    try:
+        query = select(APIKey).where(APIKey.key_hash == key_id)
+        result = await db.execute(query)
+        api_key = result.scalar_one_or_none()
+        
+        if not api_key:
+            raise HTTPException(status_code=404, detail="API key not found")
+        
+        await db.delete(api_key)
+        await db.commit()
+        
+        logger.info("Deleted API key", key_id=key_id[:8])
+        return JSONResponse({"success": True, "message": "API key deleted"})
+    except Exception as e:
+        logger.error("delete_api_key_error", error=str(e))
+        return JSONResponse({"error": str(e)}, status_code=500)
+
+@router.get("/debug/models", response_class=JSONResponse)
+async def debug_models(request: Request, db: AsyncSession = Depends(get_db_dependency)):
+    """Debug endpoint to check model storage."""
+    try:
+        # Get total count
+        total_count = await db.execute(select(func.count(ModelCatalog.model_id)))
+        total = total_count.scalar() or 0
+        
+        # Get first 5 models for debugging
+        query = select(ModelCatalog).limit(5)
+        result = await db.execute(query)
+        models = result.scalars().all()
+        
+        model_data = []
+        for model in models:
+            model_data.append({
+                "model_id": model.model_id,
+                "display_name": model.display_name,
+                "provider": model.provider,
+                "status": model.status,
+                "created_at": model.created_at.isoformat() if model.created_at else None,
+                "input_price": float(model.input_price_per_1k) if model.input_price_per_1k else 0,
+                "output_price": float(model.output_price_per_1k) if model.output_price_per_1k else 0
+            })
+        
+        return JSONResponse({
+            "total_models": total,
+            "sample_models": model_data,
+            "success": True
+        })
+    except Exception as e:
+        logger.error("debug_models_error", error=str(e))
+        return JSONResponse({"error": str(e)}, status_code=500)

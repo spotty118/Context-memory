@@ -1,0 +1,559 @@
+{% extends "base.html" %}
+
+{% block title %}Worker Monitoring{% endblock %}
+
+{% block extra_head %}
+<!-- Font Awesome for icons -->
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+<style>
+    .health-score {
+        font-size: 2rem;
+        font-weight: bold;
+    }
+    .health-excellent { color: #10b981; }
+    .health-good { color: #059669; }
+    .health-warning { color: #f59e0b; }
+    .health-critical { color: #ef4444; }
+    
+    .queue-card {
+        transition: transform 0.2s;
+    }
+    .queue-card:hover {
+        transform: translateY(-2px);
+    }
+    
+    .metric-card {
+        background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+        color: white;
+    }
+    
+    .worker-status {
+        display: inline-block;
+        padding: 0.25rem 0.5rem;
+        border-radius: 0.375rem;
+        font-size: 0.75rem;
+        font-weight: 600;
+    }
+    .worker-idle { background-color: #10b981; color: white; }
+    .worker-busy { background-color: #f59e0b; color: white; }
+    .worker-dead { background-color: #ef4444; color: white; }
+    
+    .auto-refresh {
+        animation: pulse 2s cubic-bezier(0.4, 0, 0.6, 1) infinite;
+    }
+    
+    @keyframes pulse {
+        0%, 100% { opacity: 1; }
+        50% { opacity: .5; }
+    }
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="max-w-7xl mx-auto">
+    <!-- Header -->
+    <div class="mb-8">
+        <div class="flex justify-between items-center">
+            <div>
+                <h1 class="text-3xl font-bold text-gray-900">Worker Monitoring</h1>
+                <p class="mt-2 text-gray-600">Monitor background workers, job queues, and system health</p>
+            </div>
+            <div class="flex space-x-4">
+                <button id="refreshBtn" class="bg-blue-600 text-white px-4 py-2 rounded-lg hover:bg-blue-700 transition-colors">
+                    <i class="fas fa-sync-alt mr-2"></i>Refresh
+                </button>
+                <div class="flex items-center space-x-2">
+                    <input type="checkbox" id="autoRefresh" class="rounded">
+                    <label for="autoRefresh" class="text-sm text-gray-700">Auto refresh (30s)</label>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Health Score Section -->
+    <div class="grid grid-cols-1 md:grid-cols-4 gap-6 mb-8">
+        <div class="bg-white rounded-xl shadow-lg p-6">
+            <div class="flex items-center justify-between">
+                <div>
+                    <h3 class="text-lg font-semibold text-gray-900">Health Score</h3>
+                    <div id="healthScore" class="health-score health-excellent">{{ health_score or 'N/A' }}</div>
+                </div>
+                <div class="w-12 h-12 bg-green-100 rounded-lg flex items-center justify-center">
+                    <i class="fas fa-heartbeat text-green-600 text-xl"></i>
+                </div>
+            </div>
+        </div>
+        
+        <div class="bg-white rounded-xl shadow-lg p-6">
+            <div class="flex items-center justify-between">
+                <div>
+                    <h3 class="text-lg font-semibold text-gray-900">Active Workers</h3>
+                    <div class="text-2xl font-bold text-blue-600" id="activeWorkers">{{ workers.active_count or 0 }}</div>
+                </div>
+                <div class="w-12 h-12 bg-blue-100 rounded-lg flex items-center justify-center">
+                    <i class="fas fa-users text-blue-600 text-xl"></i>
+                </div>
+            </div>
+        </div>
+        
+        <div class="bg-white rounded-xl shadow-lg p-6">
+            <div class="flex items-center justify-between">
+                <div>
+                    <h3 class="text-lg font-semibold text-gray-900">Queued Jobs</h3>
+                    <div class="text-2xl font-bold text-purple-600" id="queuedJobs">{{ queues.total_queued_jobs or 0 }}</div>
+                </div>
+                <div class="w-12 h-12 bg-purple-100 rounded-lg flex items-center justify-center">
+                    <i class="fas fa-tasks text-purple-600 text-xl"></i>
+                </div>
+            </div>
+        </div>
+        
+        <div class="bg-white rounded-xl shadow-lg p-6">
+            <div class="flex items-center justify-between">
+                <div>
+                    <h3 class="text-lg font-semibold text-gray-900">Failed Jobs</h3>
+                    <div class="text-2xl font-bold text-red-600" id="failedJobs">{{ queues.total_failed_jobs or 0 }}</div>
+                </div>
+                <div class="w-12 h-12 bg-red-100 rounded-lg flex items-center justify-center">
+                    <i class="fas fa-exclamation-triangle text-red-600 text-xl"></i>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Status Issues -->
+    {% if issues %}
+    <div class="mb-6">
+        <div class="bg-yellow-50 border border-yellow-200 rounded-lg p-4">
+            <div class="flex">
+                <i class="fas fa-exclamation-triangle text-yellow-400 mt-0.5 mr-3"></i>
+                <div>
+                    <h3 class="text-sm font-medium text-yellow-800">System Issues Detected</h3>
+                    <ul class="mt-2 text-sm text-yellow-700">
+                        {% for issue in issues %}
+                        <li>• {{ issue }}</li>
+                        {% endfor %}
+                    </ul>
+                </div>
+            </div>
+        </div>
+    </div>
+    {% endif %}
+
+    <!-- Queue Status Grid -->
+    <div class="grid grid-cols-1 lg:grid-cols-2 xl:grid-cols-3 gap-6 mb-8">
+        {% for queue_name, queue_data in queues.details.items() %}
+        <div class="queue-card bg-white rounded-xl shadow-lg p-6">
+            <div class="flex items-center justify-between mb-4">
+                <h3 class="text-lg font-semibold text-gray-900">{{ queue_name.title() }} Queue</h3>
+                {% if queue_data.get('error') %}
+                <span class="text-red-500"><i class="fas fa-exclamation-circle"></i></span>
+                {% else %}
+                <span class="text-green-500"><i class="fas fa-check-circle"></i></span>
+                {% endif %}
+            </div>
+            
+            {% if queue_data.get('error') %}
+            <div class="text-red-600 text-sm">
+                Error: {{ queue_data.error }}
+            </div>
+            {% else %}
+            <div class="grid grid-cols-2 gap-4">
+                <div>
+                    <div class="text-sm text-gray-600">Pending</div>
+                    <div class="text-xl font-bold text-blue-600">{{ queue_data.length or 0 }}</div>
+                </div>
+                <div>
+                    <div class="text-sm text-gray-600">Failed</div>
+                    <div class="text-xl font-bold text-red-600">{{ queue_data.failed_count or 0 }}</div>
+                </div>
+                <div>
+                    <div class="text-sm text-gray-600">Finished</div>
+                    <div class="text-xl font-bold text-green-600">{{ queue_data.finished_count or 0 }}</div>
+                </div>
+                <div>
+                    <div class="text-sm text-gray-600">Deferred</div>
+                    <div class="text-xl font-bold text-yellow-600">{{ queue_data.deferred_count or 0 }}</div>
+                </div>
+            </div>
+            
+            <div class="mt-4 flex space-x-2">
+                <button onclick="clearQueue('{{ queue_name }}')" 
+                        class="text-sm bg-red-100 text-red-700 px-3 py-1 rounded hover:bg-red-200 transition-colors">
+                    Clear Queue
+                </button>
+                {% if queue_data.failed_count > 0 %}
+                <button onclick="retryFailedJobs('{{ queue_name }}')" 
+                        class="text-sm bg-blue-100 text-blue-700 px-3 py-1 rounded hover:bg-blue-200 transition-colors">
+                    Retry Failed
+                </button>
+                {% endif %}
+            </div>
+            {% endif %}
+        </div>
+        {% endfor %}
+    </div>
+
+    <!-- Workers Section -->
+    <div class="grid grid-cols-1 lg:grid-cols-2 gap-8">
+        <!-- Active Workers -->
+        <div class="bg-white rounded-xl shadow-lg p-6">
+            <h3 class="text-lg font-semibold text-gray-900 mb-4">Active Workers</h3>
+            
+            {% if workers.workers %}
+            <div class="space-y-4">
+                {% for worker in workers.workers %}
+                <div class="border border-gray-200 rounded-lg p-4">
+                    {% if worker.get('error') %}
+                    <div class="flex items-center">
+                        <span class="worker-status worker-dead">Error</span>
+                        <span class="ml-3 text-sm text-gray-900">{{ worker.name or 'Unknown' }}</span>
+                    </div>
+                    <div class="mt-2 text-sm text-red-600">{{ worker.error }}</div>
+                    {% else %}
+                    <div class="flex items-center justify-between">
+                        <div class="flex items-center">
+                            <span class="worker-status worker-{{ worker.state or 'unknown' }}">
+                                {{ (worker.state or 'Unknown').title() }}
+                            </span>
+                            <span class="ml-3 text-sm font-medium text-gray-900">{{ worker.name }}</span>
+                        </div>
+                        <div class="text-sm text-gray-500">
+                            {% if worker.current_job %}
+                            Processing: {{ worker.current_job[:8] }}...
+                            {% else %}
+                            Idle
+                            {% endif %}
+                        </div>
+                    </div>
+                    
+                    <div class="mt-3 grid grid-cols-3 gap-4 text-sm">
+                        <div>
+                            <div class="text-gray-600">Success</div>
+                            <div class="font-semibold text-green-600">{{ worker.successful_jobs or 0 }}</div>
+                        </div>
+                        <div>
+                            <div class="text-gray-600">Failed</div>
+                            <div class="font-semibold text-red-600">{{ worker.failed_jobs or 0 }}</div>
+                        </div>
+                        <div>
+                            <div class="text-gray-600">Uptime</div>
+                            <div class="font-semibold text-blue-600">{{ worker.total_working_time or 0 }}s</div>
+                        </div>
+                    </div>
+                    
+                    {% if worker.last_heartbeat %}
+                    <div class="mt-2 text-xs text-gray-500">
+                        Last heartbeat: {{ worker.last_heartbeat }}
+                    </div>
+                    {% endif %}
+                    {% endif %}
+                </div>
+                {% endfor %}
+            </div>
+            {% else %}
+            <div class="text-center py-8 text-gray-500">
+                <i class="fas fa-robot text-4xl mb-4"></i>
+                <p>No active workers found</p>
+            </div>
+            {% endif %}
+        </div>
+
+        <!-- Failed Jobs Management -->
+        <div class="bg-white rounded-xl shadow-lg p-6">
+            <div class="flex items-center justify-between mb-4">
+                <h3 class="text-lg font-semibold text-gray-900">Failed Jobs Management</h3>
+                <button onclick="loadFailedJobs()" 
+                        class="text-sm bg-blue-600 text-white px-3 py-1 rounded hover:bg-blue-700 transition-colors">
+                    Load Failed Jobs
+                </button>
+            </div>
+            
+            <div id="failedJobsList" class="space-y-3">
+                <div class="text-center py-8 text-gray-500">
+                    <i class="fas fa-clipboard-list text-4xl mb-4"></i>
+                    <p>Click "Load Failed Jobs" to view failed jobs</p>
+                </div>
+            </div>
+            
+            <div class="mt-4 flex space-x-2">
+                <button onclick="retryAllFailed()" 
+                        class="flex-1 bg-green-600 text-white px-4 py-2 rounded hover:bg-green-700 transition-colors">
+                    <i class="fas fa-redo mr-2"></i>Retry All
+                </button>
+                <button onclick="cleanupOldFailed()" 
+                        class="flex-1 bg-yellow-600 text-white px-4 py-2 rounded hover:bg-yellow-700 transition-colors">
+                    <i class="fas fa-trash mr-2"></i>Cleanup Old
+                </button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Redis Status -->
+    <div class="mt-8 bg-white rounded-xl shadow-lg p-6">
+        <h3 class="text-lg font-semibold text-gray-900 mb-4">Redis Status</h3>
+        
+        {% if redis.connected %}
+        <div class="grid grid-cols-1 md:grid-cols-3 gap-6">
+            <div class="flex items-center">
+                <div class="w-3 h-3 bg-green-500 rounded-full mr-3"></div>
+                <div>
+                    <div class="text-sm text-gray-600">Status</div>
+                    <div class="font-semibold text-green-600">Connected</div>
+                </div>
+            </div>
+            <div>
+                <div class="text-sm text-gray-600">Memory Used</div>
+                <div class="font-semibold">{{ redis.used_memory or 'N/A' }}</div>
+            </div>
+            <div>
+                <div class="text-sm text-gray-600">Connected Clients</div>
+                <div class="font-semibold">{{ redis.connected_clients or 'N/A' }}</div>
+            </div>
+        </div>
+        {% else %}
+        <div class="flex items-center text-red-600">
+            <div class="w-3 h-3 bg-red-500 rounded-full mr-3"></div>
+            <div>
+                <div class="font-semibold">Disconnected</div>
+                <div class="text-sm">{{ redis.error or 'Unknown error' }}</div>
+            </div>
+        </div>
+        {% endif %}
+    </div>
+</div>
+
+<!-- JavaScript -->
+<script>
+let autoRefreshInterval;
+
+// Auto refresh functionality
+document.getElementById('autoRefresh').addEventListener('change', function(e) {
+    if (e.target.checked) {
+        autoRefreshInterval = setInterval(refreshData, 30000);
+        document.getElementById('refreshBtn').classList.add('auto-refresh');
+    } else {
+        clearInterval(autoRefreshInterval);
+        document.getElementById('refreshBtn').classList.remove('auto-refresh');
+    }
+});
+
+// Manual refresh
+document.getElementById('refreshBtn').addEventListener('click', refreshData);
+
+async function refreshData() {
+    try {
+        const response = await fetch('/v1/workers/health');
+        const data = await response.json();
+        updateUI(data);
+    } catch (error) {
+        console.error('Failed to refresh data:', error);
+        showNotification('Failed to refresh data', 'error');
+    }
+}
+
+function updateUI(data) {
+    // Update health score
+    const healthScore = document.getElementById('healthScore');
+    if (data.health_score !== undefined) {
+        healthScore.textContent = Math.round(data.health_score);
+        healthScore.className = 'health-score ' + getHealthClass(data.health_score);
+    }
+    
+    // Update counters
+    document.getElementById('activeWorkers').textContent = data.workers?.active_count || 0;
+    document.getElementById('queuedJobs').textContent = data.queues?.total_queued_jobs || 0;
+    document.getElementById('failedJobs').textContent = data.queues?.total_failed_jobs || 0;
+}
+
+function getHealthClass(score) {
+    if (score >= 90) return 'health-excellent';
+    if (score >= 70) return 'health-good';
+    if (score >= 50) return 'health-warning';
+    return 'health-critical';
+}
+
+async function clearQueue(queueName) {
+    if (!confirm(`Are you sure you want to clear the ${queueName} queue? This will remove all pending jobs.`)) {
+        return;
+    }
+    
+    try {
+        const response = await fetch(`/v1/workers/queues/${queueName}/clear`, {
+            method: 'POST',
+            headers: {
+                'X-API-Key': '{{ api_key or "admin" }}'
+            }
+        });
+        
+        if (response.ok) {
+            showNotification(`${queueName} queue cleared successfully`, 'success');
+            refreshData();
+        } else {
+            showNotification(`Failed to clear ${queueName} queue`, 'error');
+        }
+    } catch (error) {
+        showNotification(`Error clearing queue: ${error.message}`, 'error');
+    }
+}
+
+async function retryFailedJobs(queueName) {
+    try {
+        const response = await fetch(`/v1/workers/jobs/failed/retry-all?queue_name=${queueName}`, {
+            method: 'POST',
+            headers: {
+                'X-API-Key': '{{ api_key or "admin" }}'
+            }
+        });
+        
+        const result = await response.json();
+        
+        if (response.ok) {
+            showNotification(`Retried ${result.successful_retries} failed jobs from ${queueName}`, 'success');
+            refreshData();
+        } else {
+            showNotification(`Failed to retry jobs: ${result.detail || 'Unknown error'}`, 'error');
+        }
+    } catch (error) {
+        showNotification(`Error retrying jobs: ${error.message}`, 'error');
+    }
+}
+
+async function loadFailedJobs() {
+    try {
+        const response = await fetch('/v1/workers/jobs/failed', {
+            headers: {
+                'X-API-Key': '{{ api_key or "admin" }}'
+            }
+        });
+        
+        const data = await response.json();
+        const container = document.getElementById('failedJobsList');
+        
+        if (data.failed_jobs && data.failed_jobs.length > 0) {
+            container.innerHTML = data.failed_jobs.map(job => `
+                <div class="border border-red-200 rounded-lg p-3 bg-red-50">
+                    <div class="flex items-center justify-between">
+                        <div>
+                            <div class="font-medium text-sm">${job.func_name || 'Unknown Job'}</div>
+                            <div class="text-xs text-gray-600">${job.id}</div>
+                        </div>
+                        <button onclick="retryJob('${job.id}')" 
+                                class="text-xs bg-blue-600 text-white px-2 py-1 rounded hover:bg-blue-700">
+                            Retry
+                        </button>
+                    </div>
+                    <div class="mt-2 text-xs text-red-600">
+                        Failed at: ${job.failed_at || 'Unknown'}
+                    </div>
+                </div>
+            `).join('');
+        } else {
+            container.innerHTML = `
+                <div class="text-center py-8 text-gray-500">
+                    <i class="fas fa-check-circle text-4xl mb-4 text-green-500"></i>
+                    <p>No failed jobs found</p>
+                </div>
+            `;
+        }
+    } catch (error) {
+        showNotification(`Error loading failed jobs: ${error.message}`, 'error');
+    }
+}
+
+async function retryJob(jobId) {
+    try {
+        const response = await fetch(`/v1/workers/jobs/${jobId}/retry`, {
+            method: 'POST',
+            headers: {
+                'X-API-Key': '{{ api_key or "admin" }}'
+            }
+        });
+        
+        if (response.ok) {
+            showNotification('Job retry scheduled successfully', 'success');
+            loadFailedJobs();
+        } else {
+            showNotification('Failed to retry job', 'error');
+        }
+    } catch (error) {
+        showNotification(`Error retrying job: ${error.message}`, 'error');
+    }
+}
+
+async function retryAllFailed() {
+    if (!confirm('Are you sure you want to retry all failed jobs? This may take some time.')) {
+        return;
+    }
+    
+    try {
+        const response = await fetch('/v1/workers/jobs/failed/retry-all', {
+            method: 'POST',
+            headers: {
+                'X-API-Key': '{{ api_key or "admin" }}'
+            }
+        });
+        
+        const result = await response.json();
+        
+        if (response.ok) {
+            showNotification(`Retried ${result.successful_retries} failed jobs`, 'success');
+            refreshData();
+            loadFailedJobs();
+        } else {
+            showNotification('Failed to retry jobs', 'error');
+        }
+    } catch (error) {
+        showNotification(`Error retrying jobs: ${error.message}`, 'error');
+    }
+}
+
+async function cleanupOldFailed() {
+    if (!confirm('Are you sure you want to cleanup old failed jobs? This action cannot be undone.')) {
+        return;
+    }
+    
+    try {
+        const response = await fetch('/v1/workers/jobs/failed/cleanup', {
+            method: 'DELETE',
+            headers: {
+                'X-API-Key': '{{ api_key or "admin" }}'
+            }
+        });
+        
+        const result = await response.json();
+        
+        if (response.ok) {
+            showNotification(result.message, 'success');
+            refreshData();
+            loadFailedJobs();
+        } else {
+            showNotification('Failed to cleanup old jobs', 'error');
+        }
+    } catch (error) {
+        showNotification(`Error cleaning up jobs: ${error.message}`, 'error');
+    }
+}
+
+function showNotification(message, type) {
+    // Simple notification system (you can enhance this)
+    const notification = document.createElement('div');
+    notification.className = `fixed top-4 right-4 px-6 py-4 rounded-lg shadow-lg z-50 ${
+        type === 'success' ? 'bg-green-600 text-white' : 'bg-red-600 text-white'
+    }`;
+    notification.textContent = message;
+    
+    document.body.appendChild(notification);
+    
+    setTimeout(() => {
+        notification.remove();
+    }, 5000);
+}
+
+// Initialize page
+document.addEventListener('DOMContentLoaded', function() {
+    // Load failed jobs on page load
+    // loadFailedJobs();
+});
+</script>
+{% endblock %}

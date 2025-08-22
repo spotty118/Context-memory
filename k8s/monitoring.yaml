@@ -1,0 +1,363 @@
+# Monitoring and alerting configuration for Context Memory Gateway
+# Includes ServiceMonitor, PrometheusRule, and alert configurations
+
+apiVersion: monitoring.coreos.com/v1
+kind: ServiceMonitor
+metadata:
+  name: context-memory-gateway
+  namespace: context-memory-gateway
+  labels:
+    app: context-memory-gateway
+    release: prometheus
+spec:
+  selector:
+    matchLabels:
+      app: context-memory-gateway
+      component: api
+  endpoints:
+  - port: http
+    path: /metrics
+    interval: 30s
+    scrapeTimeout: 10s
+    honorLabels: true
+
+---
+# Prometheus rules for Context Memory Gateway
+apiVersion: monitoring.coreos.com/v1
+kind: PrometheusRule
+metadata:
+  name: context-memory-gateway-rules
+  namespace: context-memory-gateway
+  labels:
+    app: context-memory-gateway
+    release: prometheus
+spec:
+  groups:
+  - name: context_memory_gateway.rules
+    interval: 30s
+    rules:
+    
+    # Request rate and latency metrics
+    - record: cmg:request_rate_5m
+      expr: rate(http_requests_total{job="context-memory-gateway"}[5m])
+      
+    - record: cmg:request_latency_95p
+      expr: histogram_quantile(0.95, rate(http_request_duration_seconds_bucket{job="context-memory-gateway"}[5m]))
+      
+    - record: cmg:request_latency_99p
+      expr: histogram_quantile(0.99, rate(http_request_duration_seconds_bucket{job="context-memory-gateway"}[5m]))
+      
+    # Error rate metrics
+    - record: cmg:error_rate_5m
+      expr: rate(http_requests_total{job="context-memory-gateway",status=~"5.."}[5m]) / rate(http_requests_total{job="context-memory-gateway"}[5m])
+      
+    # Database connection metrics
+    - record: cmg:db_connections_active
+      expr: database_connections_active{job="context-memory-gateway"}
+      
+    - record: cmg:db_query_duration_95p
+      expr: histogram_quantile(0.95, rate(database_query_duration_seconds_bucket{job="context-memory-gateway"}[5m]))
+      
+    # Redis metrics
+    - record: cmg:redis_operations_rate
+      expr: rate(redis_operations_total{job="context-memory-gateway"}[5m])
+      
+    - record: cmg:cache_hit_rate
+      expr: rate(cache_hits_total{job="context-memory-gateway"}[5m]) / (rate(cache_hits_total{job="context-memory-gateway"}[5m]) + rate(cache_misses_total{job="context-memory-gateway"}[5m]))
+      
+    # Context memory metrics
+    - record: cmg:context_ingestion_rate
+      expr: rate(context_items_ingested_total{job="context-memory-gateway"}[5m])
+      
+    - record: cmg:context_retrieval_latency_95p
+      expr: histogram_quantile(0.95, rate(context_retrieval_duration_seconds_bucket{job="context-memory-gateway"}[5m]))
+      
+    # Model usage metrics
+    - record: cmg:model_requests_rate
+      expr: rate(model_requests_total{job="context-memory-gateway"}[5m])
+      
+    # Worker metrics
+    - record: cmg:job_queue_size
+      expr: worker_job_queue_size{job="context-memory-gateway"}
+      
+    - record: cmg:job_processing_rate
+      expr: rate(worker_jobs_processed_total{job="context-memory-gateway"}[5m])
+
+  - name: context_memory_gateway.alerts
+    rules:
+    
+    # High-level service alerts
+    - alert: CMGServiceDown
+      expr: up{job="context-memory-gateway"} == 0
+      for: 1m
+      labels:
+        severity: critical
+        service: context-memory-gateway
+      annotations:
+        summary: "Context Memory Gateway service is down"
+        description: "Context Memory Gateway service has been down for more than 1 minute"
+        runbook_url: "https://docs.company.com/runbooks/cmg-service-down"
+        
+    - alert: CMGHighErrorRate
+      expr: cmg:error_rate_5m > 0.05
+      for: 2m
+      labels:
+        severity: critical
+        service: context-memory-gateway
+      annotations:
+        summary: "High error rate in Context Memory Gateway"
+        description: "Error rate is {{ $value | humanizePercentage }} for more than 2 minutes"
+        runbook_url: "https://docs.company.com/runbooks/cmg-high-error-rate"
+        
+    - alert: CMGHighLatency
+      expr: cmg:request_latency_95p > 2
+      for: 5m
+      labels:
+        severity: warning
+        service: context-memory-gateway
+      annotations:
+        summary: "High latency in Context Memory Gateway"
+        description: "95th percentile latency is {{ $value }}s for more than 5 minutes"
+        runbook_url: "https://docs.company.com/runbooks/cmg-high-latency"
+        
+    # Database alerts
+    - alert: CMGDatabaseConnectionsHigh
+      expr: cmg:db_connections_active > 80
+      for: 3m
+      labels:
+        severity: warning
+        service: context-memory-gateway
+        component: database
+      annotations:
+        summary: "High database connections in Context Memory Gateway"
+        description: "Database connections are {{ $value }}, approaching limits"
+        
+    - alert: CMGDatabaseSlowQueries
+      expr: cmg:db_query_duration_95p > 1
+      for: 5m
+      labels:
+        severity: warning
+        service: context-memory-gateway
+        component: database
+      annotations:
+        summary: "Slow database queries detected"
+        description: "95th percentile query duration is {{ $value }}s"
+        
+    # Cache alerts
+    - alert: CMGLowCacheHitRate
+      expr: cmg:cache_hit_rate < 0.7
+      for: 10m
+      labels:
+        severity: warning
+        service: context-memory-gateway
+        component: cache
+      annotations:
+        summary: "Low cache hit rate"
+        description: "Cache hit rate is {{ $value | humanizePercentage }}, indicating potential caching issues"
+        
+    # Context memory specific alerts
+    - alert: CMGContextIngestionBacklog
+      expr: cmg:context_ingestion_rate < 1 and cmg:job_queue_size{queue="context_ingestion"} > 100
+      for: 5m
+      labels:
+        severity: warning
+        service: context-memory-gateway
+        component: context-memory
+      annotations:
+        summary: "Context ingestion backlog detected"
+        description: "Context ingestion queue has {{ $value }} items but processing rate is low"
+        
+    - alert: CMGContextRetrievalSlow
+      expr: cmg:context_retrieval_latency_95p > 0.5
+      for: 5m
+      labels:
+        severity: warning
+        service: context-memory-gateway
+        component: context-memory
+      annotations:
+        summary: "Slow context retrieval"
+        description: "95th percentile context retrieval latency is {{ $value }}s"
+        
+    # Worker alerts
+    - alert: CMGWorkerJobBacklog
+      expr: cmg:job_queue_size > 1000
+      for: 5m
+      labels:
+        severity: warning
+        service: context-memory-gateway
+        component: worker
+      annotations:
+        summary: "High job queue backlog"
+        description: "Job queue size is {{ $value }}, indicating processing delays"
+        
+    - alert: CMGWorkerJobFailureRate
+      expr: rate(worker_jobs_failed_total{job="context-memory-gateway"}[5m]) / rate(worker_jobs_total{job="context-memory-gateway"}[5m]) > 0.1
+      for: 3m
+      labels:
+        severity: warning
+        service: context-memory-gateway
+        component: worker
+      annotations:
+        summary: "High worker job failure rate"
+        description: "Worker job failure rate is {{ $value | humanizePercentage }}"
+        
+    # Resource alerts
+    - alert: CMGHighMemoryUsage
+      expr: container_memory_usage_bytes{pod=~"context-memory-gateway-.*"} / container_spec_memory_limit_bytes > 0.9
+      for: 5m
+      labels:
+        severity: warning
+        service: context-memory-gateway
+        component: resources
+      annotations:
+        summary: "High memory usage"
+        description: "Memory usage is {{ $value | humanizePercentage }} of limit"
+        
+    - alert: CMGHighCPUUsage
+      expr: rate(container_cpu_usage_seconds_total{pod=~"context-memory-gateway-.*"}[5m]) / container_spec_cpu_quota * 100 > 80
+      for: 10m
+      labels:
+        severity: warning
+        service: context-memory-gateway
+        component: resources
+      annotations:
+        summary: "High CPU usage"
+        description: "CPU usage is {{ $value }}% of limit"
+        
+    # External dependency alerts
+    - alert: CMGOpenRouterAPIDown
+      expr: external_api_up{service="openrouter"} == 0
+      for: 2m
+      labels:
+        severity: critical
+        service: context-memory-gateway
+        component: external-api
+      annotations:
+        summary: "OpenRouter API is down"
+        description: "Cannot reach OpenRouter API for more than 2 minutes"
+        
+    - alert: CMGOpenRouterHighLatency
+      expr: external_api_latency_95p{service="openrouter"} > 5
+      for: 5m
+      labels:
+        severity: warning
+        service: context-memory-gateway
+        component: external-api
+      annotations:
+        summary: "High OpenRouter API latency"
+        description: "OpenRouter API 95th percentile latency is {{ $value }}s"
+
+---
+# Grafana Dashboard ConfigMap
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: cmg-grafana-dashboard
+  namespace: context-memory-gateway
+  labels:
+    app: context-memory-gateway
+    grafana_dashboard: "1"
+data:
+  dashboard.json: |
+    {
+      "dashboard": {
+        "id": null,
+        "title": "Context Memory Gateway",
+        "tags": ["context-memory-gateway"],
+        "style": "dark",
+        "timezone": "browser",
+        "panels": [
+          {
+            "id": 1,
+            "title": "Request Rate",
+            "type": "graph",
+            "targets": [
+              {
+                "expr": "cmg:request_rate_5m",
+                "legendFormat": "{{ instance }}"
+              }
+            ],
+            "yAxes": [
+              {
+                "label": "requests/sec"
+              }
+            ]
+          },
+          {
+            "id": 2,
+            "title": "Request Latency",
+            "type": "graph",
+            "targets": [
+              {
+                "expr": "cmg:request_latency_95p",
+                "legendFormat": "95th percentile"
+              },
+              {
+                "expr": "cmg:request_latency_99p",
+                "legendFormat": "99th percentile"
+              }
+            ],
+            "yAxes": [
+              {
+                "label": "seconds"
+              }
+            ]
+          },
+          {
+            "id": 3,
+            "title": "Error Rate",
+            "type": "graph",
+            "targets": [
+              {
+                "expr": "cmg:error_rate_5m",
+                "legendFormat": "Error Rate"
+              }
+            ],
+            "yAxes": [
+              {
+                "label": "percentage",
+                "max": 1
+              }
+            ]
+          },
+          {
+            "id": 4,
+            "title": "Cache Hit Rate",
+            "type": "stat",
+            "targets": [
+              {
+                "expr": "cmg:cache_hit_rate",
+                "legendFormat": "Hit Rate"
+              }
+            ]
+          },
+          {
+            "id": 5,
+            "title": "Database Connections",
+            "type": "graph",
+            "targets": [
+              {
+                "expr": "cmg:db_connections_active",
+                "legendFormat": "Active Connections"
+              }
+            ]
+          },
+          {
+            "id": 6,
+            "title": "Job Queue Size",
+            "type": "graph",
+            "targets": [
+              {
+                "expr": "cmg:job_queue_size",
+                "legendFormat": "{{ queue }}"
+              }
+            ]
+          }
+        ],
+        "time": {
+          "from": "now-1h",
+          "to": "now"
+        },
+        "refresh": "30s"
+      }
+    }
