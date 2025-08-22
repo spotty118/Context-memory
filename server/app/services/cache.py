@@ -219,7 +219,7 @@ class ModelCacheService:
             logger.info("model_cache_warmed", models_cached=len(models))
             
         except Exception as e:
-            logger.error("model_cache_warm_error", error=str(e))
+            logger.exception("model_cache_warm_error")
     
     @staticmethod
     async def _fetch_models_from_db(
@@ -425,7 +425,7 @@ class SettingsCacheService:
             return True
             
         except Exception as e:
-            logger.error("setting_update_error", key=key, error=str(e))
+            logger.exception("cache_warm_error", model_id=key)
             return False
     
     @staticmethod
@@ -519,7 +519,7 @@ class SettingsCacheService:
             logger.info("settings_cache_warmed")
             
         except Exception as e:
-            logger.error("settings_cache_warm_error", error=str(e))
+            logger.exception("cache_service_error")
     
     @staticmethod
     async def _fetch_settings_from_db(keys: List[str]) -> Dict[str, Any]:

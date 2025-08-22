@@ -240,9 +240,8 @@ def setup_telemetry(app: FastAPI) -> None:
     try:
         # Basic Prometheus metrics setup
         logger.info("telemetry_setup_complete")
-        
     except Exception as e:
-        logger.error("telemetry_setup_failed", error=str(e))
+        logger.exception("telemetry_setup_failed")
 
 
 def record_request_metrics(method: str, endpoint: str, status_code: int, duration: float) -> None:

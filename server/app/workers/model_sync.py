@@ -85,7 +85,7 @@ def sync_model_catalog() -> Dict[str, Any]:
                 
                 except Exception as e:
                     error_msg = f"Error processing model {or_model.get('id', 'unknown')}: {str(e)}"
-                    logger.error("model_sync_error", error=error_msg)
+                    logger.exception("model_sync_error", message=error_msg)
                     results["errors"].append(error_msg)
             
             # Mark unseen models as deprecated
@@ -107,7 +107,7 @@ def sync_model_catalog() -> Dict[str, Any]:
     
     except Exception as e:
         error_msg = f"Model sync failed: {str(e)}"
-        logger.error("model_sync_failed", error=error_msg)
+        logger.exception("model_sync_failed", message=error_msg)
         return {
             "error": error_msg,
             "sync_time": datetime.utcnow().isoformat()
@@ -260,7 +260,7 @@ def cleanup_deprecated_models(days_old: int = 30) -> Dict[str, Any]:
                     results["models_removed"] += 1
                     logger.info("deprecated_model_removed", model_id=model.id)
                 except Exception as e:
-                    logger.error("model_removal_failed", model_id=model.id, error=str(e))
+                    logger.exception("model_cleanup_error", model_id=model.id, error=str(e))
             
             db.commit()
             
@@ -269,7 +269,7 @@ def cleanup_deprecated_models(days_old: int = 30) -> Dict[str, Any]:
     
     except Exception as e:
         error_msg = f"Deprecated model cleanup failed: {str(e)}"
-        logger.error("deprecated_model_cleanup_failed", error=error_msg)
+        logger.exception("deprecated_model_cleanup_failed", message=error_msg)
         return {
             "error": error_msg,
             "cleanup_time": datetime.utcnow().isoformat()
@@ -318,7 +318,7 @@ def update_model_usage_stats() -> Dict[str, Any]:
     
     except Exception as e:
         error_msg = f"Model usage stats update failed: {str(e)}"
-        logger.error("model_usage_stats_update_failed", error=error_msg)
+        logger.exception("model_usage_stats_update_failed", message=error_msg)
         return {
             "error": error_msg,
             "update_time": datetime.utcnow().isoformat()

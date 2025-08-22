@@ -1,0 +1,75 @@
+{% set key = api_key %}
+<div class="fixed inset-0 bg-gray-600 bg-opacity-50 overflow-y-auto h-full w-full z-50" id="api-key-usage-modal">
+  <div class="relative top-20 mx-auto p-5 border w-11/12 md:w-2/3 lg:w-1/2 shadow-lg rounded-md bg-white">
+    <div class="flex items-center justify-between mb-4">
+      <h3 class="text-lg font-medium text-gray-900">API Key Usage</h3>
+      <button onclick="document.getElementById('api-key-usage-modal').remove()" class="text-gray-400 hover:text-gray-600">
+        <i data-lucide="x" class="w-6 h-6"></i>
+      </button>
+    </div>
+
+    <div class="space-y-4">
+      <!-- Key Metadata -->
+      <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
+        <div>
+          <label class="block text-sm font-medium text-gray-700">Key</label>
+          <div class="mt-1 text-sm text-gray-900 break-all">{{ key.key_hash }}</div>
+        </div>
+        <div>
+          <label class="block text-sm font-medium text-gray-700">Workspace</label>
+          <div class="mt-1 text-sm text-gray-900">{{ key.name or 'Default Workspace' }}</div>
+        </div>
+      </div>
+
+      <!-- Usage Stats -->
+      <div class="grid grid-cols-1 sm:grid-cols-4 gap-4">
+        <div class="bg-white overflow-hidden rounded-lg border">
+          <div class="p-4">
+            <div class="text-xs text-gray-500">Total Requests</div>
+            <div class="text-lg font-semibold text-gray-900">{{ usage.total_requests }}</div>
+          </div>
+        </div>
+        <div class="bg-white overflow-hidden rounded-lg border">
+          <div class="p-4">
+            <div class="text-xs text-gray-500">Requests Today</div>
+            <div class="text-lg font-semibold text-gray-900">{{ usage.requests_today }}</div>
+          </div>
+        </div>
+        <div class="bg-white overflow-hidden rounded-lg border">
+          <div class="p-4">
+            <div class="text-xs text-gray-500">Quota Usage</div>
+            <div class="text-lg font-semibold text-gray-900">{{ usage.quota_usage }}</div>
+          </div>
+        </div>
+        <div class="bg-white overflow-hidden rounded-lg border">
+          <div class="p-4">
+            <div class="text-xs text-gray-500">Last Used</div>
+            <div class="text-lg font-semibold text-gray-900">{{ usage.last_used }}</div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Status Badge -->
+      <div>
+        <label class="block text-sm font-medium text-gray-700">Status</label>
+        {% if key.active %}
+          <span class="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-green-100 text-green-800 mt-1">
+            <span class="w-1.5 h-1.5 bg-green-400 rounded-full mr-1.5"></span> Active
+          </span>
+        {% else %}
+          <span class="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-yellow-100 text-yellow-800 mt-1">
+            <span class="w-1.5 h-1.5 bg-yellow-400 rounded-full mr-1.5"></span> Suspended
+          </span>
+        {% endif %}
+      </div>
+    </div>
+
+    <div class="mt-6 flex justify-end">
+      <button class="px-4 py-2 bg-gray-200 text-gray-700 rounded-md hover:bg-gray-300"
+              onclick="document.getElementById('api-key-usage-modal').remove()">
+        Close
+      </button>
+    </div>
+  </div>
+</div>
+<script>try { lucide.createIcons(); } catch (e) { /* no-op */ }</script>

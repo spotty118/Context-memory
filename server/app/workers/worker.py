@@ -55,7 +55,7 @@ class WorkerManager:
             self.stop_worker()
         
         except Exception as e:
-            logger.error("worker_start_failed", error=str(e))
+            logger.exception("worker_start_failed")
             raise
     
     def stop_worker(self):
@@ -75,7 +75,7 @@ class WorkerManager:
                 logger.info("worker_stopped")
             
             except Exception as e:
-                logger.error("worker_stop_failed", error=str(e))
+                logger.exception("worker_stop_failed")
     
     def _signal_handler(self, signum, frame):
         """Handle shutdown signals."""
@@ -110,12 +110,12 @@ def main():
     args = parser.parse_args()
     
     if args.list_queues:
-        print("Available queues:")
+        logger.info("Available queues:")
         for name in QueueNames.__dict__.values():
             if not name.startswith("_"):
                 queue = queues.get(name)
                 if queue:
-                    print(f"  {name}: {len(queue)} jobs")
+                    logger.info("queue_status", name=name, job_count=len(queue))
         return
     
     # Start worker

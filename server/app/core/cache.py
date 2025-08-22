@@ -196,7 +196,7 @@ class CacheManager:
                     return value
                     
                 except (json.JSONDecodeError, KeyError) as e:
-                    logger.warning("cache_parse_error", key=key, error=str(e))
+                    logger.exception("cache_parse_error", key=key)
                     await self.delete(key, cache_type)
             
             self._stats["misses"] += 1
@@ -204,8 +204,7 @@ class CacheManager:
             return default
             
         except Exception as e:
-            self._stats["errors"] += 1
-            logger.error("cache_get_error", key=key, error=str(e))
+            logger.exception("cache_get_error", key=key)
             return default
     
     async def set(
@@ -261,8 +260,7 @@ class CacheManager:
             return True
             
         except Exception as e:
-            self._stats["errors"] += 1
-            logger.error("cache_set_error", key=key, error=str(e))
+            logger.exception("cache_set_error", key=key)
             return False
     
     async def delete(self, key: str, cache_type: str = "default") -> bool:
@@ -281,8 +279,7 @@ class CacheManager:
             return True
             
         except Exception as e:
-            self._stats["errors"] += 1
-            logger.error("cache_delete_error", key=key, error=str(e))
+            logger.exception("cache_delete_error", key=key)
             return False
     
     async def invalidate_pattern(self, pattern: str) -> int:
@@ -313,8 +310,7 @@ class CacheManager:
             return 0
             
         except Exception as e:
-            self._stats["errors"] += 1
-            logger.error("cache_invalidate_pattern_error", pattern=pattern, error=str(e))
+            logger.exception("cache_clear_error", pattern=pattern)
             return 0
     
     def _get_from_memory(self, key: str) -> Any:
@@ -359,7 +355,7 @@ class CacheManager:
                 "configurations": {k: {"ttl": v.ttl_seconds, "layer": v.layer.value} for k, v in self._cache_configs.items()}
             }
         except Exception as e:
-            logger.error("cache_stats_error", error=str(e))
+            logger.exception("cache_stats_error")
             return self._stats
     
     async def health_check(self) -> Dict[str, Any]:
@@ -391,7 +387,7 @@ class CacheManager:
             }
             
         except Exception as e:
-            logger.error("cache_health_check_error", error=str(e))
+            logger.exception("cache_health_check_error")
             return {
                 "status": "unhealthy",
                 "redis_connected": False,

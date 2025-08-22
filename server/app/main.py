@@ -11,7 +11,7 @@ import time
 from fastapi import FastAPI, Request, Response, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.middleware.trustedhost import TrustedHostMiddleware
-from fastapi.responses import JSONResponse, HTMLResponse
+from fastapi.responses import JSONResponse, HTMLResponse, RedirectResponse
 from fastapi.staticfiles import StaticFiles
 import structlog
 import sentry_sdk
@@ -23,6 +23,7 @@ from app.telemetry.logging import setup_logging
 from app.telemetry.otel import setup_telemetry
 from app.db.session import init_db
 from app.api import llm_gateway, models, ingest, recall, workingset, expand, feedback, health, workers, cache, benchmarks
+from app.api.v2 import enhanced_context
 from app.admin.views import router as admin_router
 from app.core.exceptions import ContextMemoryError
 from app.core.audit import log_security_event, SecurityEventType, SecurityRisk
@@ -70,7 +71,7 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
         await SettingsCacheService.warm_cache()
         logger.info("cache_warmed_successfully")
     except Exception as e:
-        logger.warning("cache_warm_failed_on_startup", error=str(e))
+        logger.exception("cache_warm_failed_on_startup")
     
     logger.info("Application startup complete")
     
@@ -89,6 +90,8 @@ app = FastAPI(
     redoc_url="/redoc" if not settings.is_production else None,
     lifespan=lifespan,
 )
+# Note: ProxyHeadersMiddleware was removed in newer Starlette versions
+# Trust headers are now handled via uvicorn --forwarded-allow-ips or server config
 
 # Security middleware
 if settings.is_production:
@@ -395,21 +398,20 @@ app.include_router(create_version_endpoints(), prefix="/api", tags=["API Version
 # Health endpoints (version-independent)
 app.include_router(health.router, prefix="", tags=["Health"])
 
-# V1 API Routes
-app.include_router(llm_gateway.router, prefix="/v1", tags=["LLM Gateway v1"])
-app.include_router(models.router, prefix="/v1", tags=["Models v1"])
-app.include_router(ingest.router, prefix="/v1", tags=["Context Memory v1"])
-app.include_router(recall.router, prefix="/v1", tags=["Context Memory v1"])
-app.include_router(workingset.router, prefix="/v1", tags=["Context Memory v1"])
-app.include_router(expand.router, prefix="/v1", tags=["Context Memory v1"])
-app.include_router(feedback.router, prefix="/v1", tags=["Context Memory v1"])
-app.include_router(workers.router, prefix="/v1", tags=["Workers v1"])
-app.include_router(cache.router, prefix="/v1", tags=["Cache v1"])
-app.include_router(benchmarks.router, prefix="/v1", tags=["Benchmarks v1"])
+# V2 API Routes (Primary)
+app.include_router(enhanced_context.router, prefix="", tags=["Enhanced Context Memory v2"])
 
-# Future V2 API Routes (placeholder for when v2 is implemented)
-# v2_router = create_versioned_router("v2", tags=["API v2"])
-# app.include_router(v2_router)
+# V1 API Routes (Backward Compatibility)
+app.include_router(llm_gateway.router, prefix="/v1", tags=["LLM Gateway v1 (Legacy)"])
+app.include_router(models.router, prefix="/v1", tags=["Models v1 (Legacy)"])
+app.include_router(ingest.router, prefix="/v1", tags=["Context Memory v1 (Legacy)"])
+app.include_router(recall.router, prefix="/v1", tags=["Context Memory v1 (Legacy)"])
+app.include_router(workingset.router, prefix="/v1", tags=["Context Memory v1 (Legacy)"])
+app.include_router(expand.router, prefix="/v1", tags=["Context Memory v1 (Legacy)"])
+app.include_router(feedback.router, prefix="/v1", tags=["Context Memory v1 (Legacy)"])
+app.include_router(workers.router, prefix="/v1", tags=["Workers v1 (Legacy)"])
+app.include_router(cache.router, prefix="/v1", tags=["Cache v1 (Legacy)"])
+app.include_router(benchmarks.router, prefix="/v1", tags=["Benchmarks v1 (Legacy)"])
 
 # Admin interface (version-independent)
 app.include_router(admin_router, prefix="/admin", tags=["Admin"])
@@ -422,171 +424,11 @@ except RuntimeError:
     pass
 
 
-# Root endpoint
-@app.get("/", response_class=HTMLResponse)
+# Root endpoint - redirect to admin login
+@app.get("/")
 async def root(request: Request):
-    """Root endpoint with web interface landing page."""
-    html_content = f"""
-    <!DOCTYPE html>
-    <html lang="en">
-    <head>
-        <meta charset="UTF-8">
-        <meta name="viewport" content="width=device-width, initial-scale=1.0">
-        <title>Context Memory + LLM Gateway</title>
-        <style>
-            body {{
-                font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
-                line-height: 1.6;
-                color: #333;
-                max-width: 1200px;
-                margin: 0 auto;
-                padding: 20px;
-                background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-                min-height: 100vh;
-            }}
-            .container {{
-                background: white;
-                padding: 40px;
-                border-radius: 10px;
-                box-shadow: 0 10px 30px rgba(0,0,0,0.3);
-                margin-top: 50px;
-            }}
-            h1 {{
-                color: #2c3e50;
-                text-align: center;
-                margin-bottom: 10px;
-            }}
-            .subtitle {{
-                text-align: center;
-                color: #7f8c8d;
-                margin-bottom: 40px;
-                font-size: 1.1em;
-            }}
-            .status {{
-                text-align: center;
-                padding: 10px;
-                background: #2ecc71;
-                color: white;
-                border-radius: 5px;
-                margin: 20px 0;
-                font-weight: bold;
-            }}
-            .features {{
-                display: grid;
-                grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
-                gap: 30px;
-                margin: 40px 0;
-            }}
-            .feature-card {{
-                background: #f8f9fa;
-                padding: 25px;
-                border-radius: 8px;
-                border-left: 4px solid #3498db;
-            }}
-            .feature-card h3 {{
-                color: #2c3e50;
-                margin-top: 0;
-            }}
-            .endpoints {{
-                background: #ecf0f1;
-                padding: 20px;
-                border-radius: 5px;
-                margin: 30px 0;
-            }}
-            .endpoints h3 {{
-                margin-top: 0;
-                color: #2c3e50;
-            }}
-            .endpoint-link {{
-                display: inline-block;
-                margin: 10px 10px 10px 0;
-                padding: 10px 15px;
-                background: #3498db;
-                color: white;
-                text-decoration: none;
-                border-radius: 5px;
-                transition: background 0.3s;
-            }}
-            .endpoint-link:hover {{
-                background: #2980b9;
-            }}
-            .admin-link {{
-                background: #e74c3c;
-            }}
-            .admin-link:hover {{
-                background: #c0392b;
-            }}
-            .docs-link {{
-                background: #f39c12;
-            }}
-            .docs-link:hover {{
-                background: #e67e22;
-            }}
-            .footer {{
-                text-align: center;
-                margin-top: 40px;
-                color: #7f8c8d;
-                font-size: 0.9em;
-            }}
-        </style>
-    </head>
-    <body>
-        <div class="container">
-            <h1>🧠 Context Memory + LLM Gateway</h1>
-            <p class="subtitle">Advanced context memory system with LLM gateway capabilities</p>
-            
-            <div class="status">
-                🟢 System Status: Operational | Environment: {settings.ENVIRONMENT.title()}
-            </div>
-
-            <div class="features">
-                <div class="feature-card">
-                    <h3>🔗 LLM Gateway</h3>
-                    <p>Unified API access to multiple LLM providers including OpenAI, OpenRouter, and more with intelligent routing and load balancing.</p>
-                </div>
-                
-                <div class="feature-card">
-                    <h3>🧠 Context Memory</h3>
-                    <p>Advanced semantic and episodic memory system that maintains conversation context across sessions and interactions.</p>
-                </div>
-                
-                <div class="feature-card">
-                    <h3>🔍 Vector Search</h3>
-                    <p>Powered by Qdrant vector database for efficient similarity search and context retrieval from stored memories.</p>
-                </div>
-                
-                <div class="feature-card">
-                    <h3>🔐 API Management</h3>
-                    <p>Comprehensive API key management, usage tracking, and access control for secure multi-tenant deployment.</p>
-                </div>
-            </div>
-
-            <div class="endpoints">
-                <h3>🚀 Available Endpoints</h3>
-                <a href="/docs" class="endpoint-link docs-link">📚 API Documentation</a>
-                <a href="/admin/" class="endpoint-link admin-link">⚙️ Admin Dashboard</a>
-                <a href="/admin/api-keys" class="endpoint-link admin-link">🔑 API Keys</a>
-                <a href="/admin/models" class="endpoint-link admin-link">🤖 Models</a>
-            </div>
-
-            <div class="endpoints">
-                <h3>🔌 API Integration</h3>
-                <p><strong>Base URL:</strong> <code>http://45.79.220.225/v1/</code></p>
-                <p><strong>Current API Version:</strong> v1 (Latest)</p>
-                <p><strong>Authentication:</strong> Bearer token authentication required</p>
-                <p><strong>Version Management:</strong> <a href="/api/versions">View API Versions</a></p>
-                <p>Compatible with OpenAI SDK - simply change the base URL to start using our enhanced memory features.</p>
-            </div>
-
-            <div class="footer">
-                <p>Context Memory + LLM Gateway v1.0.0 | Server: 45.79.220.225 |
-                <a href="https://github.com/justinadams-context-memory" target="_blank">Documentation</a></p>
-            </div>
-        </div>
-    </body>
-    </html>
-    """
-    return HTMLResponse(content=html_content)
+    """Root endpoint redirects to admin login."""
+    return RedirectResponse(url="/admin/login", status_code=302)
 
 
 if __name__ == "__main__":

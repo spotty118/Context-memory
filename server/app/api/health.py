@@ -62,7 +62,7 @@ async def readiness_check(db = Depends(get_db_dependency)) -> Dict[str, Any]:
             "error": str(e),
         }
         overall_status = "not_ready"
-        logger.error("database_health_check_failed", error=str(e))
+        logger.exception("database_health_check_failed")
 
     # Check Redis connectivity
     try:
@@ -83,7 +83,7 @@ async def readiness_check(db = Depends(get_db_dependency)) -> Dict[str, Any]:
             "error": str(e),
         }
         overall_status = "not_ready"
-        logger.error("redis_health_check_failed", error=str(e))
+        logger.exception("redis_health_check_failed")
 
     # Check vector backend if using Qdrant
     if settings.VECTOR_BACKEND == "qdrant" and settings.QDRANT_URL:

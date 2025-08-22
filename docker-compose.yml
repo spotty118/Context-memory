@@ -15,7 +15,7 @@ services:
       POSTGRES_HOST_AUTH_METHOD: ${POSTGRES_HOST_AUTH_METHOD:-md5}
     volumes:
       - postgres_data:/var/lib/postgresql/data
-      - ./scripts/init-db.sql:/docker-entrypoint-initdb.d/init-db.sql:ro
+      - ./infra/sql/init.sql:/docker-entrypoint-initdb.d/init.sql:ro
     ports:
       - "${POSTGRES_PORT:-5432}:5432"
     healthcheck:
@@ -176,7 +176,7 @@ services:
     environment:
       GF_SECURITY_ADMIN_USER: ${GRAFANA_USER:-admin}
       GF_SECURITY_ADMIN_PASSWORD: ${GRAFANA_PASSWORD:-admin}
-      GF_USERS_ALLOW_SIGN_UP: false
+      GF_USERS_ALLOW_SIGN_UP: "false"
     volumes:
       - grafana_data:/var/lib/grafana
       - ./config/grafana/provisioning:/etc/grafana/provisioning:ro
@@ -197,7 +197,7 @@ services:
       - "${JAEGER_UI_PORT:-16686}:16686"
       - "${JAEGER_AGENT_PORT:-6831}:6831/udp"
     environment:
-      COLLECTOR_OTLP_ENABLED: true
+      COLLECTOR_OTLP_ENABLED: "true"
     volumes:
       - jaeger_data:/tmp
     restart: unless-stopped

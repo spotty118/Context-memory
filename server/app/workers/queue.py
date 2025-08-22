@@ -86,11 +86,10 @@ def enqueue_job(
         return job
     
     except Exception as e:
-        logger.error(
+        logger.exception(
             "job_enqueue_failed",
             queue=queue_name,
-            func=func.__name__,
-            error=str(e)
+            func=func.__name__
         )
         raise
 
@@ -119,7 +118,7 @@ def get_job_status(job_id: str) -> Dict[str, Any]:
         }
     
     except Exception as e:
-        logger.error("job_status_fetch_failed", job_id=job_id, error=str(e))
+        logger.exception("job_status_fetch_failed", job_id=job_id)
         return {"id": job_id, "status": "unknown", "error": str(e)}
 
 def cancel_job(job_id: str) -> bool:
@@ -140,7 +139,7 @@ def cancel_job(job_id: str) -> bool:
         return True
     
     except Exception as e:
-        logger.error("job_cancel_failed", job_id=job_id, error=str(e))
+        logger.exception("job_cancel_error", job_id=job_id)
         return False
 
 def get_queue_stats() -> Dict[str, Dict[str, Any]]:
@@ -162,7 +161,7 @@ def get_queue_stats() -> Dict[str, Dict[str, Any]]:
                 "started_count": queue.started_job_registry.count,
             }
         except Exception as e:
-            logger.error("queue_stats_failed", queue=name, error=str(e))
+            logger.exception("queue_stats_error", error=str(e))
             stats[name] = {"error": str(e)}
     
     return stats
@@ -187,7 +186,7 @@ def clear_queue(queue_name: str) -> int:
         return count
     
     except Exception as e:
-        logger.error("queue_clear_failed", queue=queue_name, error=str(e))
+        logger.exception("queue_clear_failed", queue=queue_name)
         raise
 
 def create_worker(queue_names: List[str]) -> Worker:
@@ -293,7 +292,7 @@ def get_failed_jobs(queue_name: str = None) -> List[Dict[str, Any]]:
                         "next_retry_at": job.meta.get("next_retry_at")
                     })
                 except Exception as e:
-                    logger.error("failed_job_fetch_error", job_id=job_id, error=str(e))
+                    logger.exception("failed_job_fetch_error", job_id=job_id)
                     failed_jobs.append({
                         "id": job_id,
                         "queue": queue.name,
@@ -301,7 +300,7 @@ def get_failed_jobs(queue_name: str = None) -> List[Dict[str, Any]]:
                     })
         
         except Exception as e:
-            logger.error("failed_jobs_registry_error", queue=queue.name, error=str(e))
+            logger.exception("failed_jobs_registry_error", queue=queue.name)
     
     return failed_jobs
 
@@ -394,7 +393,7 @@ def retry_failed_job(
         }
     
     except Exception as e:
-        logger.error("job_retry_failed", job_id=job_id, error=str(e))
+        logger.exception("job_retry_error", job_id=job_id)
         return {
             "job_id": job_id,
             "status": "retry_failed",
@@ -496,7 +495,7 @@ def cleanup_old_failed_jobs(older_than_days: int = 7) -> Dict[str, Any]:
                         failed_job_registry.remove(job_id)
                         cleaned_count += 1
                 except Exception as e:
-                    logger.warning("failed_job_cleanup_error", job_id=job_id, error=str(e))
+                    logger.exception("failed_job_cleanup_error", job_id=job_id)
             
             if cleaned_count > 0:
                 cleanup_results["cleaned_queues"].append({
@@ -506,7 +505,7 @@ def cleanup_old_failed_jobs(older_than_days: int = 7) -> Dict[str, Any]:
                 cleanup_results["total_cleaned"] += cleaned_count
         
         except Exception as e:
-            logger.error("queue_cleanup_error", queue=name, error=str(e))
+            logger.exception("queue_cleanup_error", error=str(e))
     
     logger.info(
         "failed_jobs_cleanup_completed",

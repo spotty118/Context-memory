@@ -62,7 +62,7 @@ async def get_cache_status(
         }
         
     except Exception as e:
-        logger.error("cache_status_error", error=str(e))
+        logger.exception("cache_status_error")
         raise HTTPException(status_code=500, detail=f"Failed to get cache status: {str(e)}")
 
 
@@ -96,7 +96,7 @@ async def warm_cache(
             except Exception as e:
                 error_msg = f"Model cache warming failed: {str(e)}"
                 results["errors"].append(error_msg)
-                logger.error("model_cache_warm_error", error=str(e))
+                logger.exception("model_cache_warm_error")
         
         # Warm settings cache
         if request.settings:
@@ -107,7 +107,7 @@ async def warm_cache(
             except Exception as e:
                 error_msg = f"Settings cache warming failed: {str(e)}"
                 results["errors"].append(error_msg)
-                logger.error("settings_cache_warm_error", error=str(e))
+                logger.exception("settings_cache_warm_error")
         
         return {
             "status": "completed" if not results["errors"] else "partial",
@@ -116,7 +116,7 @@ async def warm_cache(
         }
         
     except Exception as e:
-        logger.error("cache_warm_error", error=str(e))
+        logger.exception("cache_warm_error")
         raise HTTPException(status_code=500, detail=f"Cache warming failed: {str(e)}")
 
 
@@ -183,7 +183,7 @@ async def invalidate_cache(
         }
         
     except Exception as e:
-        logger.error("cache_invalidate_error", error=str(e))
+        logger.exception("cache_invalidate_error")
         raise HTTPException(status_code=500, detail=f"Cache invalidation failed: {str(e)}")
 
 
@@ -232,7 +232,7 @@ async def clear_cache(
         }
         
     except Exception as e:
-        logger.error("cache_clear_error", error=str(e))
+        logger.exception("cache_clear_error")
         raise HTTPException(status_code=500, detail=f"Cache clear failed: {str(e)}")
 
 
@@ -278,7 +278,7 @@ async def cache_health_check(
         }
         
     except Exception as e:
-        logger.error("cache_health_check_error", error=str(e))
+        logger.exception("cache_health_check_error")
         return {
             "status": "unhealthy",
             "error": str(e),
@@ -314,7 +314,7 @@ async def get_cache_config(
         }
         
     except Exception as e:
-        logger.error("cache_config_error", error=str(e))
+        logger.exception("cache_config_error")
         raise HTTPException(status_code=500, detail=f"Failed to get cache config: {str(e)}")
 
 

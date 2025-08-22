@@ -9,6 +9,7 @@ from fastapi import APIRouter, Request, HTTPException
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel
 import structlog
+from functools import wraps
 
 logger = structlog.get_logger(__name__)
 
@@ -26,7 +27,7 @@ class APIVersion(str, Enum):
     @classmethod
     def get_supported(cls) -> List["APIVersion"]:
         """Get all supported API versions."""
-        return [cls.V1]
+        return [cls.V1, cls.V2]
     
     @classmethod
     def is_supported(cls, version: str) -> bool:
@@ -40,7 +41,7 @@ class APIVersion(str, Enum):
 class APIVersionInfo(BaseModel):
     """API version information model."""
     version: str
-    status: str  # "current", "deprecated", "sunset"
+    status: str  # "current", "deprecated", "sunset", "planned"
     release_date: date
     deprecation_date: Optional[date] = None
     sunset_date: Optional[date] = None
@@ -324,12 +325,30 @@ def create_version_endpoints() -> APIRouter:
 
 
 # Utility functions for version-aware request handling
+def _extract_request(args, kwargs) -> Optional[Request]:
+    """Extract FastAPI Request object from args/kwargs for decorator use."""
+    # Common kwarg names first
+    req = kwargs.get("request") or kwargs.get("http_request")
+    if isinstance(req, Request):
+        return req
+    # Any kwarg that is a Request
+    for v in kwargs.values():
+        if isinstance(v, Request):
+            return v
+    # Positional args
+    for a in args:
+        if isinstance(a, Request):
+            return a
+    return None
+
+
 def require_version(required_version: str) -> Callable:
     """Decorator to require a specific API version."""
-    
     def decorator(func: Callable) -> Callable:
-        async def wrapper(request: Request, *args, **kwargs):
-            current_version = getattr(request.state, "api_version", None)
+        @wraps(func)
+        async def wrapper(*args, **kwargs):
+            request = _extract_request(args, kwargs)
+            current_version = getattr(request.state, "api_version", None) if request else None
             
             if current_version != required_version:
                 raise HTTPException(
@@ -338,18 +357,18 @@ def require_version(required_version: str) -> Callable:
                            f"but {current_version} was provided"
                 )
             
-            return await func(request, *args, **kwargs)
-        
+            return await func(*args, **kwargs)
         return wrapper
     return decorator
 
 
 def min_version(minimum_version: str) -> Callable:
     """Decorator to require a minimum API version."""
-    
     def decorator(func: Callable) -> Callable:
-        async def wrapper(request: Request, *args, **kwargs):
-            current_version = getattr(request.state, "api_version", None)
+        @wraps(func)
+        async def wrapper(*args, **kwargs):
+            request = _extract_request(args, kwargs)
+            current_version = getattr(request.state, "api_version", None) if request else None
             
             # Simple version comparison (assumes vN format)
             current_num = int(current_version[1:]) if current_version and current_version.startswith('v') else 0
@@ -362,8 +381,7 @@ def min_version(minimum_version: str) -> Callable:
                            f"but {current_version} was provided"
                 )
             
-            return await func(request, *args, **kwargs)
-        
+            return await func(*args, **kwargs)
         return wrapper
     return decorator
 
@@ -424,10 +442,14 @@ def is_feature_available(feature: str, version: str = None) -> bool:
 
 def require_feature(feature_name: str) -> Callable:
     """Decorator to require a specific feature to be available."""
-    
     def decorator(func: Callable) -> Callable:
-        async def wrapper(request: Request, *args, **kwargs):
-            api_version = getattr(request.state, "api_version", APIVersion.get_latest().value)
+        @wraps(func)
+        async def wrapper(*args, **kwargs):
+            request = _extract_request(args, kwargs)
+            api_version = (
+                getattr(request.state, "api_version", APIVersion.get_latest().value)
+                if request else APIVersion.get_latest().value
+            )
             
             if not is_feature_available(feature_name, api_version):
                 raise HTTPException(
@@ -435,7 +457,6 @@ def require_feature(feature_name: str) -> Callable:
                     detail=f"Feature '{feature_name}' is not available in API version {api_version}"
                 )
             
-            return await func(request, *args, **kwargs)
-        
+            return await func(*args, **kwargs)
         return wrapper
     return decorator

@@ -375,3 +375,22 @@ class Workspace(Base, TimestampMixin):
         Index('idx_workspaces_name', 'name'),
     )
 
+
+class User(Base, TimestampMixin):
+    """Admin users for authentication."""
+    __tablename__ = 'users'
+    
+    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    username = Column(Text, unique=True, nullable=False)
+    email = Column(Text, unique=True, nullable=False) 
+    password_hash = Column(Text, nullable=False)
+    is_active = Column(Boolean, default=True, nullable=False)
+    is_admin = Column(Boolean, default=True, nullable=False)
+    last_login_at = Column(DateTime(timezone=True))
+    
+    __table_args__ = (
+        Index('idx_users_username', 'username'),
+        Index('idx_users_email', 'email'),
+        Index('idx_users_active', 'is_active'),
+    )
+

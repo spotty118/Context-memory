@@ -9,11 +9,12 @@ from fastapi import HTTPException, Depends, Request, Cookie
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 import structlog
 import jwt
+from passlib.context import CryptContext
 from pydantic import BaseModel
 
 from app.core.config import settings
 from app.db.session import get_db
-from app.db.models import APIKey
+from app.db.models import APIKey, User
 from app.core.audit import (
     log_authentication_event, log_api_key_event, log_admin_access_event,
     SecurityEventType, SecurityRisk, log_security_event
@@ -22,6 +23,9 @@ from app.core.audit import (
 
 logger = structlog.get_logger(__name__)
 security = HTTPBearer(auto_error=False)
+
+# Password hashing context
+pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
 
 
 def hash_api_key(api_key: str) -> str:
@@ -352,28 +356,94 @@ async def get_admin_user(
     return admin_user
 
 
+def hash_password(password: str) -> str:
+    """Hash a password using bcrypt."""
+    return pwd_context.hash(password)
+
+
+def verify_password(password: str, hashed: str) -> bool:
+    """Verify a password against its hash."""
+    return pwd_context.verify(password, hashed)
+
+
 async def authenticate_admin(username: str, password: str, correlation_id: Optional[str] = None) -> bool:
-    """Authenticate admin credentials."""
-    # For now, use simple hardcoded credentials
-    # In production, this should use proper password hashing and database storage
+    """Authenticate admin credentials against database."""
+    from sqlalchemy import select
+    from app.db.session import get_db
     
-    # Default admin credentials (should be changed in production)
-    default_admin_user = "admin"
-    default_admin_pass = "admin123"  # This should be configurable via environment
+    async with get_db() as db:
+        # Look up user in database
+        result = await db.execute(
+            select(User).where(User.username == username, User.is_active == True)
+        )
+        user = result.scalar_one_or_none()
+        
+        if user and verify_password(password, user.password_hash):
+            # Update last login time
+            user.last_login_at = datetime.utcnow()
+            await db.commit()
+            
+            log_authentication_event(
+                success=True,
+                username=username,
+                method="password",
+                correlation_id=correlation_id
+            )
+            return True
+        
+        # Fallback to hardcoded credentials for backward compatibility
+        default_admin_user = "admin"
+        default_admin_pass = "admin123"
+        
+        admin_user = settings.SECRET_KEY.split("-")[0] if "-" in settings.SECRET_KEY else default_admin_user
+        admin_pass = settings.SECRET_KEY.split("-")[1] if "-" in settings.SECRET_KEY else default_admin_pass
+        
+        is_valid = username == admin_user and password == admin_pass
+        
+        log_authentication_event(
+            success=is_valid,
+            username=username,
+            method="password",
+            error_message=None if is_valid else "Invalid credentials",
+            correlation_id=correlation_id
+        )
+        
+        return is_valid
+
+
+async def create_user(username: str, email: str, password: str) -> User:
+    """Create a new admin user."""
+    from app.db.session import get_db
+    from sqlalchemy import select
     
-    # Check against environment variables first
-    admin_user = settings.SECRET_KEY.split("-")[0] if "-" in settings.SECRET_KEY else default_admin_user
-    admin_pass = settings.SECRET_KEY.split("-")[1] if "-" in settings.SECRET_KEY else default_admin_pass
-    
-    is_valid = username == admin_user and password == admin_pass
-    
-    log_authentication_event(
-        success=is_valid,
-        username=username,
-        method="password",
-        error_message=None if is_valid else "Invalid credentials",
-        correlation_id=correlation_id
-    )
-    
-    return is_valid
+    async with get_db() as db:
+        # Check if user already exists
+        result = await db.execute(
+            select(User).where(
+                (User.username == username) | (User.email == email)
+            )
+        )
+        existing_user = result.scalar_one_or_none()
+        
+        if existing_user:
+            if existing_user.username == username:
+                raise HTTPException(status_code=400, detail="Username already exists")
+            else:
+                raise HTTPException(status_code=400, detail="Email already exists")
+        
+        # Create new user
+        hashed_password = hash_password(password)
+        new_user = User(
+            username=username,
+            email=email,
+            password_hash=hashed_password,
+            is_active=True,
+            is_admin=True
+        )
+        
+        db.add(new_user)
+        await db.commit()
+        await db.refresh(new_user)
+        
+        return new_user
 

@@ -67,6 +67,11 @@ def create_session_maker():
     return async_session_maker
 
 
+def get_session_maker():
+    """Alias for create_session_maker for backwards compatibility."""
+    return create_session_maker()
+
+
 async def init_db():
     """Initialize database tables and extensions."""
     engine = create_engine()
@@ -75,10 +80,11 @@ async def init_db():
         # Enable pgvector extension
         if settings.VECTOR_BACKEND == "pgvector":
             try:
-                await conn.execute("CREATE EXTENSION IF NOT EXISTS vector;")
+                from sqlalchemy import text
+                await conn.execute(text("CREATE EXTENSION IF NOT EXISTS vector;"))
                 logger.info("pgvector_extension_enabled")
             except Exception as e:
-                logger.warning("pgvector_extension_failed", error=str(e))
+                logger.exception("pgvector_extension_failed")
 
         # Create all tables
         await conn.run_sync(Base.metadata.create_all)

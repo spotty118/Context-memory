@@ -83,10 +83,10 @@ def cleanup_old_context_items(days_old: int = 30) -> Dict[str, Any]:
             
             logger.info("context_cleanup_completed", **results)
             return results
-    
+        
     except Exception as e:
         error_msg = f"Context cleanup failed: {str(e)}"
-        logger.error("context_cleanup_failed", error=error_msg)
+        logger.exception("context_cleanup_failed", message=error_msg)
         return {
             "error": error_msg,
             "cleanup_time": datetime.utcnow().isoformat()
@@ -144,7 +144,7 @@ def cleanup_old_request_logs(days_old: int = 90) -> Dict[str, Any]:
     
     except Exception as e:
         error_msg = f"Request log cleanup failed: {str(e)}"
-        logger.error("request_log_cleanup_failed", error=error_msg)
+        logger.exception("request_log_cleanup_failed", message=error_msg)
         return {
             "error": error_msg,
             "cleanup_time": datetime.utcnow().isoformat()
@@ -187,7 +187,7 @@ def cleanup_expired_api_keys() -> Dict[str, Any]:
     
     except Exception as e:
         error_msg = f"Expired API key cleanup failed: {str(e)}"
-        logger.error("expired_api_key_cleanup_failed", error=error_msg)
+        logger.exception("expired_api_key_cleanup_failed", message=error_msg)
         return {
             "error": error_msg,
             "cleanup_time": datetime.utcnow().isoformat()
@@ -223,7 +223,7 @@ def vacuum_database() -> Dict[str, Any]:
                     db.execute(text(f"VACUUM ANALYZE {table}"))
                     logger.info("table_vacuumed", table=table)
                 except Exception as e:
-                    logger.error("table_vacuum_failed", table=table, error=str(e))
+                    logger.exception("table_vacuum_failed", table=table)
             
             # Get statistics after vacuum
             stats_after = _get_database_stats(db)
@@ -240,7 +240,7 @@ def vacuum_database() -> Dict[str, Any]:
     
     except Exception as e:
         error_msg = f"Database vacuum failed: {str(e)}"
-        logger.error("database_vacuum_failed", error=error_msg)
+        logger.exception("database_vacuum_failed", message=error_msg)
         return {
             "error": error_msg,
             "vacuum_time": datetime.utcnow().isoformat()
@@ -287,15 +287,15 @@ def optimize_embeddings_index() -> Dict[str, Any]:
                     logger.info("vector_index_optimized", table=table, column=column)
                 
                 except Exception as e:
-                    logger.error("vector_index_optimization_failed", 
-                               table=table, column=column, error=str(e))
+                    logger.exception("vector_index_optimization_failed", 
+                               table=table, column=column)
             
             logger.info("embeddings_index_optimization_completed", **results)
             return results
     
     except Exception as e:
         error_msg = f"Embeddings index optimization failed: {str(e)}"
-        logger.error("embeddings_index_optimization_failed", error=error_msg)
+        logger.exception("embeddings_index_optimization_failed", message=error_msg)
         return {
             "error": error_msg,
             "optimization_time": datetime.utcnow().isoformat()
@@ -355,7 +355,7 @@ def archive_old_usage_stats(days_old: int = 365) -> Dict[str, Any]:
     
     except Exception as e:
         error_msg = f"Usage stats archival failed: {str(e)}"
-        logger.error("usage_stats_archival_failed", error=error_msg)
+        logger.exception("usage_stats_archival_failed", message=error_msg)
         return {
             "error": error_msg,
             "archival_time": datetime.utcnow().isoformat()
@@ -388,6 +388,6 @@ def _get_database_stats(db: Session) -> Dict[str, Any]:
         }
     
     except Exception as e:
-        logger.error("database_stats_failed", error=str(e))
+        logger.exception("database_stats_failed")
         return {"error": str(e)}
 

@@ -30,7 +30,7 @@ async def get_global_settings(db) -> Dict[str, Any]:
     try:
         return await SettingsCacheService.get_global_settings(use_cache=True)
     except Exception as e:
-        logger.warning("settings_cache_fallback", error=str(e))
+        logger.exception("settings_cache_fallback")
         # Fallback to direct database query
         result = await db.execute(
             select(Settings.key, Settings.value)
@@ -108,7 +108,7 @@ async def list_models(
         all_models_data = await ModelCacheService.get_all_models(status="active", use_cache=True)
         logger.debug("models_from_cache", count=len(all_models_data))
     except Exception as e:
-        logger.warning("models_cache_fallback", error=str(e))
+        logger.exception("models_cache_fallback")
         # Fallback to direct database query
         result = await db.execute(
             select(ModelCatalog)
@@ -221,7 +221,7 @@ async def resolve_model_for_request(
                     else:
                         return None, f"Model {requested_model} not found or inactive"
             except Exception as e:
-                logger.warning("model_resolve_cache_fallback", model=requested_model, error=str(e))
+                logger.exception("model_resolve_cache_fallback", model=requested_model)
                 # Fallback to database query
                 result = await db.execute(
                     select(ModelCatalog)
@@ -332,7 +332,7 @@ async def get_model(
         model_data = await ModelCacheService.get_model_by_id(model_id, use_cache=True)
         logger.debug("model_from_cache", model_id=model_id)
     except Exception as e:
-        logger.warning("model_cache_fallback", model_id=model_id, error=str(e))
+        logger.exception("model_cache_fallback", model_id=model_id)
         model_data = None
     
     # If not in cache, try database

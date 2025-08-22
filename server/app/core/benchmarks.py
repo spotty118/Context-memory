@@ -177,8 +177,7 @@ class PerformanceBenchmark:
             self.status = BenchmarkStatus.COMPLETED
             
         except Exception as e:
-            self.status = BenchmarkStatus.FAILED
-            logger.error("benchmark_failed", error=str(e))
+            logger.exception("benchmark_failed")
             raise
         
         finally:
@@ -355,7 +354,7 @@ class PerformanceBenchmark:
                         async with semaphore:
                             return await self._make_request(session, endpoint)
                     except Exception as e:
-                        # Return error result for stress testing
+                        logger.exception("performance_test_error")
                         return BenchmarkResult(
                             endpoint=endpoint.name,
                             method=endpoint.method,

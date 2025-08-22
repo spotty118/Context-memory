@@ -91,7 +91,7 @@ def generate_embeddings_for_item(item_type: str, item_id: str) -> Dict[str, Any]
     
     except Exception as e:
         error_msg = f"Embedding generation failed for {item_type} {item_id}: {str(e)}"
-        logger.error("embedding_generation_failed", error=error_msg)
+        logger.exception("embedding_generation_failed", message=error_msg, item_type=item_type, item_id=item_id)
         return {
             "error": error_msg,
             "item_type": item_type,
@@ -187,7 +187,7 @@ def batch_generate_embeddings(
                 
                 except Exception as e:
                     error_msg = f"Batch embedding failed: {str(e)}"
-                    logger.error("batch_embedding_failed", error=error_msg)
+                    logger.exception("batch_embedding_failed", message=error_msg)
                     results["errors"].append(error_msg)
                     results["failed"] += len(items_needing_embeddings)
         
@@ -196,7 +196,7 @@ def batch_generate_embeddings(
     
     except Exception as e:
         error_msg = f"Batch embedding generation failed: {str(e)}"
-        logger.error("batch_embedding_generation_failed", error=error_msg)
+        logger.exception("batch_embedding_generation_failed", message=error_msg)
         results["errors"].append(error_msg)
         return results
 
@@ -271,7 +271,7 @@ def regenerate_all_embeddings(item_type: Optional[str] = None) -> Dict[str, Any]
                     
                     except Exception as e:
                         error_msg = f"Batch processing failed: {str(e)}"
-                        logger.error("batch_processing_failed", error=error_msg)
+                        logger.exception("batch_processing_failed", message=error_msg)
                         results["errors"].append(error_msg)
                         results["failed"] += len(batch_items)
             
@@ -280,7 +280,7 @@ def regenerate_all_embeddings(item_type: Optional[str] = None) -> Dict[str, Any]
     
     except Exception as e:
         error_msg = f"Regenerate all embeddings failed: {str(e)}"
-        logger.error("regenerate_all_embeddings_failed", error=error_msg)
+        logger.exception("regenerate_all_embeddings_failed", message=error_msg)
         return {
             "error": error_msg,
             "regeneration_time": datetime.utcnow().isoformat()
@@ -337,7 +337,7 @@ def _generate_embedding(text: str) -> Optional[List[float]]:
         return response.data[0].embedding
     
     except Exception as e:
-        logger.error("single_embedding_generation_failed", error=str(e))
+        logger.exception("single_embedding_generation_failed")
         return None
 
 def _generate_embeddings_batch(texts: List[str]) -> List[List[float]]:
@@ -351,6 +351,5 @@ def _generate_embeddings_batch(texts: List[str]) -> List[List[float]]:
         return [data.embedding for data in response.data]
     
     except Exception as e:
-        logger.error("batch_embedding_generation_failed", error=str(e))
+        logger.exception("embedding_generation_error", model=settings.EMBEDDING_MODEL)
         raise
-

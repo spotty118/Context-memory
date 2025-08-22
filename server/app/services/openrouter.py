@@ -132,10 +132,10 @@ async def make_openrouter_request(
                 logger.warning("openrouter_request_timeout", url=url, timeout=timeout)
                 raise
             except httpx.ConnectError as e:
-                logger.warning("openrouter_connection_error", url=url, error=str(e))
+                logger.exception("openrouter_connection_error", url=url)
                 raise
             except Exception as e:
-                logger.error("openrouter_request_error", url=url, error=str(e))
+                logger.exception("openrouter_request_error", url=url)
                 raise
     
     try:
@@ -273,9 +273,8 @@ async def stream_and_meter_usage(
                     )
 
         except Exception as e:
-            logger.error(
+            logger.exception(
                 "openrouter_streaming_error",
-                error=str(e),
                 workspace_id=api_key.workspace_id,
                 model=model_id
             )

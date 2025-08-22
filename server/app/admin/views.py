@@ -15,7 +15,7 @@ from app.db.models import APIKey, ModelCatalog, SemanticItem, EpisodicItem, Arti
 from app.services.openrouter import fetch_all_models, OpenRouterError
 from app.core.config import settings
 from app.core.security import (
-    get_admin_user, authenticate_admin, create_admin_jwt,
+    get_admin_user, authenticate_admin, create_admin_jwt, create_user,
     AdminUser, AdminLoginRequest, AdminLoginResponse
 )
 
@@ -24,6 +24,19 @@ logger = structlog.get_logger(__name__)
 
 # Setup templates
 templates = Jinja2Templates(directory=Path(__file__).parent / "templates")
+
+# Admin authentication helper
+async def require_admin_auth(request: Request) -> Optional[AdminUser]:
+    """Check admin authentication and return user or redirect to login."""
+    try:
+        admin_session = request.cookies.get("admin_session")
+        if not admin_session:
+            return None
+        
+        from app.core.security import verify_admin_jwt
+        return verify_admin_jwt(admin_session)
+    except Exception:
+        return None
 
 # Admin Authentication Routes
 
@@ -67,14 +80,14 @@ async def admin_login(
             logger.info("admin_login_successful", username=username, correlation_id=correlation_id)
             return response
         else:
-            logger.warning("admin_login_failed", username=username, correlation_id=correlation_id)
+            logger.exception("admin_login_failed", username=username, correlation_id=correlation_id)
             return templates.TemplateResponse("login.html", {
                 "request": request,
                 "page_title": "Admin Login",
                 "error": "Invalid username or password"
             })
     except Exception as e:
-        logger.error("admin_login_error", error=str(e))
+        logger.exception("admin_login_error")
         return templates.TemplateResponse("login.html", {
             "request": request,
             "page_title": "Admin Login",
@@ -91,6 +104,82 @@ async def admin_logout(request: Request):
     return response
 
 
+@router.get("/signup", response_class=HTMLResponse)
+async def admin_signup_page(request: Request):
+    """Admin signup page."""
+    return templates.TemplateResponse("signup.html", {
+        "request": request, 
+        "page_title": "Admin Signup"
+    })
+
+
+@router.post("/signup", response_class=HTMLResponse)
+async def admin_signup(
+    request: Request,
+    username: str = Form(...),
+    email: str = Form(...),
+    password: str = Form(...),
+    confirm_password: str = Form(...)
+):
+    """Handle admin signup form submission."""
+    try:
+        # Extract correlation ID from request state
+        correlation_id = getattr(request.state, "correlation_id", None)
+        
+        # Validate passwords match
+        if password != confirm_password:
+            return templates.TemplateResponse("signup.html", {
+                "request": request,
+                "page_title": "Admin Signup",
+                "error": "Passwords do not match"
+            })
+        
+        # Validate password strength (basic)
+        if len(password) < 6:
+            return templates.TemplateResponse("signup.html", {
+                "request": request,
+                "page_title": "Admin Signup",
+                "error": "Password must be at least 6 characters long"
+            })
+        
+        # Create user
+        user = await create_user(username, email, password)
+        
+        # Create JWT token for immediate login
+        token = create_admin_jwt(username)
+        
+        # Create response with redirect
+        response = RedirectResponse(url="/admin/dashboard", status_code=302)
+        
+        # Set secure cookie with JWT token
+        response.set_cookie(
+            key="admin_session",
+            value=token,
+            max_age=settings.JWT_EXPIRE_MINUTES * 60,
+            httponly=True,
+            secure=settings.is_production,
+            samesite="lax"
+        )
+        
+        logger.info("admin_signup_successful", username=username, email=email, correlation_id=correlation_id)
+        return response
+        
+    except HTTPException as e:
+        logger.warning("admin_signup_failed", username=username, email=email, error=e.detail, correlation_id=correlation_id)
+        return templates.TemplateResponse("signup.html", {
+            "request": request,
+            "page_title": "Admin Signup",
+            "error": e.detail
+        })
+    except Exception as e:
+        logger.exception("admin_signup_error")
+        return templates.TemplateResponse("signup.html", {
+            "request": request,
+            "page_title": "Admin Signup", 
+            "error": "Signup failed. Please try again."
+        })
+
+
 # Protected Admin Routes
 
 @router.get("/", response_class=HTMLResponse)
@@ -98,9 +187,12 @@ async def admin_logout(request: Request):
 async def dashboard(
     request: Request, 
     db: AsyncSession = Depends(get_db_dependency),
-    admin_user: AdminUser = Depends(get_admin_user)
 ):
     """Admin dashboard with system overview."""
+    # Check authentication and redirect to login if not authenticated
+    admin_user = await require_admin_auth(request)
+    if not admin_user:
+        return RedirectResponse(url="/admin/login", status_code=302)
     try:
         stats = {
             "total_api_keys": 0, "total_models": 0, "total_semantic_items": 0,
@@ -120,20 +212,23 @@ async def dashboard(
             result = await db.execute(select(func.sum(UsageStats.clicks + UsageStats.references)))
             stats["total_requests"] = result.scalar() or 0
         except Exception as e:
-            logger.error("Error getting dashboard stats", error=str(e))
+            logger.exception("dashboard_stats_error")
         return templates.TemplateResponse("dashboard.html", {"request": request, "stats": stats, "page_title": "Dashboard"})
     except Exception as e:
-        logger.error("dashboard_error", error=str(e))
+        logger.exception("dashboard_error")
         return templates.TemplateResponse("dashboard.html", {"request": request, "stats": stats, "error": str(e), "page_title": "Dashboard"})
 
-@router.get("/api-keys", response_class=HTMLResponse)
+@router.get("/keys", response_class=HTMLResponse)
 async def api_keys_list(
     request: Request, 
     db: AsyncSession = Depends(get_db_dependency), 
-    q: Optional[str] = None,
-    admin_user: AdminUser = Depends(get_admin_user)
+    q: Optional[str] = None
 ):
     """API keys management page."""
+    # Check authentication and redirect to login if not authenticated
+    admin_user = await require_admin_auth(request)
+    if not admin_user:
+        return RedirectResponse(url="/admin/login", status_code=302)
     try:
         query = select(APIKey)
         if q:
@@ -169,21 +264,24 @@ async def api_keys_list(
             "search_query": q or "", "page_title": "API Keys"
         })
     except Exception as e:
-        logger.error("api_keys_error", error=str(e))
+        logger.exception("api_keys_error")
         return templates.TemplateResponse("api_keys.html", {
             "request": request, "stats": {"active_keys": 0, "suspended_keys": 0, "total_requests": 0},
             "api_keys": [], "search_query": q or "", "error": str(e), "page_title": "API Keys"
         })
 
-@router.post("/api-keys/generate", response_class=HTMLResponse)
+@router.post("/keys/generate", response_class=HTMLResponse)
 async def generate_api_key(
     request: Request, 
     db: AsyncSession = Depends(get_db_dependency), 
     name: str = Form(...), 
-    description: Optional[str] = Form(None),
-    admin_user: AdminUser = Depends(get_admin_user)
+    description: Optional[str] = Form(None)
 ):
     """Generate a new API key."""
+    # Check authentication and redirect to login if not authenticated
+    admin_user = await require_admin_auth(request)
+    if not admin_user:
+        return RedirectResponse(url="/admin/login", status_code=302)
     try:
         new_key = f"cmg_{''.join(secrets.choice('abcdefghijklmnopqrstuvwxyz0123456789') for _ in range(32))}"
         key_hash = hashlib.sha256(new_key.encode()).hexdigest()
@@ -196,15 +294,18 @@ async def generate_api_key(
         logger.info("Generated new API key", key_prefix=key_prefix, name=name)
         return RedirectResponse(url="/admin/api-keys?success=generated", status_code=302)
     except Exception as e:
-        logger.error("generate_key_error", error=str(e))
+        logger.exception("generate_key_error")
         return RedirectResponse(url="/admin/api-keys?error=generation_failed", status_code=302)
 
 @router.get("/workers", response_class=HTMLResponse)
 async def workers_monitoring(
-    request: Request,
-    admin_user: AdminUser = Depends(get_admin_user)
+    request: Request
 ):
     """Worker monitoring and management page."""
+    # Check authentication and redirect to login if not authenticated
+    admin_user = await require_admin_auth(request)
+    if not admin_user:
+        return RedirectResponse(url="/admin/login", status_code=302)
     try:
         # Get worker health data from the API
         import httpx
@@ -225,7 +326,7 @@ async def workers_monitoring(
                         "issues": ["Could not connect to worker API"]
                     }
             except Exception as e:
-                logger.error("worker_api_call_failed", error=str(e))
+                logger.exception("worker_api_call_failed")
                 worker_data = {
                     "status": "error",
                     "error": str(e),
@@ -256,7 +357,7 @@ async def workers_monitoring(
         })
     
     except Exception as e:
-        logger.error("workers_page_error", error=str(e))
+        logger.exception("workers_page_error")
         return templates.TemplateResponse("workers.html", {
             "request": request,
             "page_title": "Worker Monitoring",
@@ -273,10 +374,13 @@ async def workers_monitoring(
 @router.get("/models", response_class=HTMLResponse)
 async def models_list(
     request: Request, 
-    db: AsyncSession = Depends(get_db_dependency),
-    admin_user: AdminUser = Depends(get_admin_user)
+    db: AsyncSession = Depends(get_db_dependency)
 ):
     """Models management page."""
+    # Check authentication and redirect to login if not authenticated
+    admin_user = await require_admin_auth(request)
+    if not admin_user:
+        return RedirectResponse(url="/admin/login", status_code=302)
     try:
         query = select(ModelCatalog).order_by(ModelCatalog.created_at.desc()).limit(50)
         result = await db.execute(query)
@@ -323,7 +427,7 @@ async def models_list(
             "active_models": stats["active_models"], "page_title": "Models"
         })
     except Exception as e:
-        logger.error("models_error", error=str(e))
+        logger.exception("models_error")
         return templates.TemplateResponse("models.html", {
             "request": request, "stats": {"active_models": 0, "deprecated_models": 0, "most_used_model": "N/A", "total_requests": 0},
             "models": [], "last_sync": "Unknown", "total_models": 0, "active_models": 0, "error": str(e), "page_title": "Models"
@@ -332,10 +436,13 @@ async def models_list(
 @router.get("/settings", response_class=HTMLResponse)
 async def settings(
     request: Request, 
-    db: AsyncSession = Depends(get_db_dependency),
-    admin_user: AdminUser = Depends(get_admin_user)
+    db: AsyncSession = Depends(get_db_dependency)
 ):
     """Settings management page."""
+    # Check authentication and redirect to login if not authenticated
+    admin_user = await require_admin_auth(request)
+    if not admin_user:
+        return RedirectResponse(url="/admin/login", status_code=302)
     try:
         # Mock settings data - in production this would come from config/database
         settings_data = {
@@ -352,7 +459,7 @@ async def settings(
             "settings": settings_data, "openrouter_configured": True
         })
     except Exception as e:
-        logger.error("settings_error", error=str(e))
+        logger.exception("settings_error")
         return templates.TemplateResponse("settings.html", {
             "request": request, "page_title": "Settings", 
             "settings": {}, "error": str(e)
@@ -367,7 +474,7 @@ async def update_openrouter_key(request: Request, openrouter_key: str = Form(...
         logger.info("Updated OpenRouter key")
         return RedirectResponse(url="/admin/settings?success=key_updated", status_code=302)
     except Exception as e:
-        logger.error("update_openrouter_error", error=str(e))
+        logger.exception("update_openrouter_error")
         return RedirectResponse(url="/admin/settings?error=update_failed", status_code=302)
 
 @router.get("/models/fetch", response_class=JSONResponse)
@@ -400,7 +507,7 @@ async def fetch_openrouter_models(request: Request):
         })
         
     except OpenRouterError as e:
-        logger.error("fetch_models_openrouter_error", error=str(e), status_code=e.status_code)
+        logger.exception("fetch_models_openrouter_error", status_code=e.status_code)
         return JSONResponse({
             "success": False,
             "error": f"OpenRouter API error: {e.message}",
@@ -408,7 +515,7 @@ async def fetch_openrouter_models(request: Request):
         }, status_code=e.status_code)
         
     except Exception as e:
-        logger.error("fetch_models_error", error=str(e))
+        logger.exception("fetch_models_error")
         return JSONResponse({
             "success": False,
             "error": "Failed to fetch models from OpenRouter"
@@ -439,7 +546,7 @@ async def api_keys_create_form(request: Request, db: AsyncSession = Depends(get_
             "api_keys": []
         })
     except Exception as e:
-        logger.error("api_keys_create_form_error", error=str(e))
+        logger.exception("api_keys_create_form_error")
         return templates.TemplateResponse("api_keys.html", {
             "request": request,
             "page_title": "Create API Key",
@@ -481,7 +588,7 @@ async def admin_context(request: Request, db: AsyncSession = Depends(get_db_depe
             "episodic_items": recent_episodic.scalars().all()
         })
     except Exception as e:
-        logger.error("context_error", error=str(e))
+        logger.exception("context_error")
         return templates.TemplateResponse("context.html", {
             "request": request,
             "page_title": "Context Memory",
@@ -524,7 +631,7 @@ async def usage(request: Request, db: AsyncSession = Depends(get_db_dependency))
             "endpoint_usage": endpoint_usage
         })
     except Exception as e:
-        logger.error("usage_error", error=str(e))
+        logger.exception("usage_error")
         return templates.TemplateResponse("usage.html", {
             "request": request, "page_title": "Usage Statistics",
             "analytics": {}, "error": str(e)
@@ -548,7 +655,7 @@ async def models_sync_status(request: Request, db: AsyncSession = Depends(get_db
             "sync_in_progress": False
         })
     except Exception as e:
-        logger.error("models_sync_status_error", error=str(e))
+        logger.exception("models_sync_status_error")
         return JSONResponse({
             "status": "error",
             "error": str(e)
@@ -617,7 +724,7 @@ async def models_sync(request: Request, db: AsyncSession = Depends(get_db_depend
                 stored_count += 1
                 
             except Exception as model_error:
-                logger.error("Failed to store model", model_id=model_data.get("id"), error=str(model_error))
+                logger.exception("model_storage_failed", model_id=model_data.get("id"))
                 continue
         
         # Commit all changes
@@ -634,7 +741,7 @@ async def models_sync(request: Request, db: AsyncSession = Depends(get_db_depend
         
     except Exception as e:
         await db.rollback()
-        logger.error("model_sync_failed", error=str(e))
+        logger.exception("model_sync_failed")
         return JSONResponse({
             "success": False,
             "message": f"Model sync failed: {str(e)}"
@@ -668,7 +775,7 @@ async def enable_model_for_users(request: Request, model_id: str, db: AsyncSessi
         
     except Exception as e:
         await db.rollback()
-        logger.error("enable_model_error", model_id=model_id, error=str(e))
+        logger.exception("enable_model_error", model_id=model_id)
         return JSONResponse({
             "success": False,
             "message": f"Failed to enable model: {str(e)}"
@@ -702,7 +809,7 @@ async def disable_model_for_users(request: Request, model_id: str, db: AsyncSess
         
     except Exception as e:
         await db.rollback()
-        logger.error("disable_model_error", model_id=model_id, error=str(e))
+        logger.exception("disable_model_error", model_id=model_id)
         return JSONResponse({
             "success": False,
             "message": f"Failed to disable model: {str(e)}"
@@ -756,7 +863,7 @@ async def api_keys_filter(request: Request, db: AsyncSession = Depends(get_db_de
             "search_query": "", "page_title": "API Keys"
         })
     except Exception as e:
-        logger.error("api_keys_filter_error", error=str(e))
+        logger.exception("api_keys_filter_error")
         return templates.TemplateResponse("api_keys.html", {
             "request": request, "stats": {"active_keys": 0, "suspended_keys": 0, "total_requests": 0},
             "api_keys": [], "search_query": "", "error": str(e), "page_title": "API Keys"
@@ -782,7 +889,7 @@ async def system_status(request: Request, db: AsyncSession = Depends(get_db_depe
             "storage": {"status": "connected", "usage": "78%"}
         })
     except Exception as e:
-        logger.error("system_status_error", error=str(e))
+        logger.exception("system_status_error")
         return JSONResponse({
             "error": str(e)
         }, status_code=500)
@@ -802,7 +909,7 @@ async def edit_api_key(request: Request, key_id: str, db: AsyncSession = Depends
             "request": request, "api_key": api_key, "page_title": "Edit API Key"
         })
     except Exception as e:
-        logger.error("edit_api_key_error", error=str(e))
+        logger.exception("edit_api_key_error")
         return JSONResponse({"error": str(e)}, status_code=500)
 
 @router.get("/api-keys/{key_id}/usage", response_class=HTMLResponse)
@@ -828,7 +935,7 @@ async def api_key_usage(request: Request, key_id: str, db: AsyncSession = Depend
             "request": request, "api_key": api_key, "usage": usage_data, "page_title": "API Key Usage"
         })
     except Exception as e:
-        logger.error("api_key_usage_error", error=str(e))
+        logger.exception("api_key_usage_error")
         return JSONResponse({"error": str(e)}, status_code=500)
 
 @router.post("/api-keys/{key_id}/suspend", response_class=JSONResponse)
@@ -848,7 +955,7 @@ async def suspend_api_key(request: Request, key_id: str, db: AsyncSession = Depe
         logger.info("Suspended API key", key_id=key_id[:8])
         return JSONResponse({"success": True, "message": "API key suspended"})
     except Exception as e:
-        logger.error("suspend_api_key_error", error=str(e))
+        logger.exception("suspend_api_key_error")
         return JSONResponse({"error": str(e)}, status_code=500)
 
 @router.post("/api-keys/{key_id}/activate", response_class=JSONResponse)
@@ -868,7 +975,7 @@ async def activate_api_key(request: Request, key_id: str, db: AsyncSession = Dep
         logger.info("Activated API key", key_id=key_id[:8])
         return JSONResponse({"success": True, "message": "API key activated"})
     except Exception as e:
-        logger.error("activate_api_key_error", error=str(e))
+        logger.exception("reactivate_api_key_error")
         return JSONResponse({"error": str(e)}, status_code=500)
 
 @router.delete("/api-keys/{key_id}", response_class=JSONResponse)
@@ -888,7 +995,7 @@ async def delete_api_key(request: Request, key_id: str, db: AsyncSession = Depen
         logger.info("Deleted API key", key_id=key_id[:8])
         return JSONResponse({"success": True, "message": "API key deleted"})
     except Exception as e:
-        logger.error("delete_api_key_error", error=str(e))
+        logger.exception("delete_api_key_error")
         return JSONResponse({"error": str(e)}, status_code=500)
 
 @router.get("/debug/models", response_class=JSONResponse)
@@ -922,5 +1029,5 @@ async def debug_models(request: Request, db: AsyncSession = Depends(get_db_depen
             "success": True
         })
     except Exception as e:
-        logger.error("debug_models_error", error=str(e))
+        logger.exception("debug_models_error")
         return JSONResponse({"error": str(e)}, status_code=500)

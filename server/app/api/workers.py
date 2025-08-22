@@ -2,7 +2,7 @@
 API endpoints for worker and job management.
 """
 from typing import Dict, Any, List, Optional
-from datetime import datetime
+from datetime import datetime, timedelta
 from fastapi import APIRouter, HTTPException, Depends, BackgroundTasks, Query
 from pydantic import BaseModel
 import structlog
@@ -55,7 +55,7 @@ async def get_queue_statistics(
         return QueueStatsResponse(queues=stats)
     
     except Exception as e:
-        logger.error("queue_stats_failed", error=str(e))
+        logger.exception("queue_stats_failed")
         raise HTTPException(status_code=500, detail="Failed to get queue statistics")
 
 @router.post("/queues/{queue_name}/clear")
@@ -77,7 +77,7 @@ async def clear_job_queue(
         }
     
     except Exception as e:
-        logger.error("queue_clear_failed", queue=queue_name, error=str(e))
+        logger.exception("queue_clear_failed", queue=queue_name)
         raise HTTPException(status_code=500, detail="Failed to clear queue")
 
 @router.post("/jobs", response_model=JobResponse)
@@ -123,7 +123,7 @@ async def enqueue_background_job(
         )
     
     except Exception as e:
-        logger.error("job_enqueue_failed", job_type=job_request.job_type, error=str(e))
+        logger.exception("job_enqueue_failed", job_type=job_request.job_type)
         raise HTTPException(status_code=500, detail="Failed to enqueue job")
 
 @router.get("/jobs/{job_id}")
@@ -137,7 +137,7 @@ async def get_job_details(
         return job_status
     
     except Exception as e:
-        logger.error("job_status_failed", job_id=job_id, error=str(e))
+        logger.exception("job_status_failed", job_id=job_id)
         raise HTTPException(status_code=500, detail="Failed to get job status")
 
 @router.delete("/jobs/{job_id}")
@@ -161,7 +161,7 @@ async def cancel_background_job(
     except HTTPException:
         raise
     except Exception as e:
-        logger.error("job_cancel_failed", job_id=job_id, error=str(e))
+        logger.exception("job_cancel_failed", job_id=job_id)
         raise HTTPException(status_code=500, detail="Failed to cancel job")
 
 @router.get("/scheduler/status", response_model=SchedulerStatusResponse)
@@ -174,7 +174,7 @@ async def get_scheduler_status(
         return SchedulerStatusResponse(**status)
     
     except Exception as e:
-        logger.error("scheduler_status_failed", error=str(e))
+        logger.exception("scheduler_status_failed")
         raise HTTPException(status_code=500, detail="Failed to get scheduler status")
 
 @router.post("/scheduler/reschedule/{task_name}")
@@ -194,7 +194,7 @@ async def reschedule_task(
     except HTTPException:
         raise
     except Exception as e:
-        logger.error("task_reschedule_failed", task_name=task_name, error=str(e))
+        logger.exception("task_reschedule_failed", task_name=task_name)
         raise HTTPException(status_code=500, detail="Failed to reschedule task")
 
 # Convenience endpoints for common operations
@@ -217,7 +217,7 @@ async def trigger_model_sync(
         }
     
     except Exception as e:
-        logger.error("model_sync_trigger_failed", error=str(e))
+        logger.exception("model_sync_trigger_failed")
         raise HTTPException(status_code=500, detail="Failed to trigger model sync")
 
 @router.post("/embeddings/generate")
@@ -249,7 +249,7 @@ async def trigger_embedding_generation(
     except HTTPException:
         raise
     except Exception as e:
-        logger.error("embedding_generation_trigger_failed", error=str(e))
+        logger.exception("embedding_generation_trigger_failed")
         raise HTTPException(status_code=500, detail="Failed to trigger embedding generation")
 
 @router.post("/cleanup/context")
@@ -273,7 +273,7 @@ async def trigger_context_cleanup(
         }
     
     except Exception as e:
-        logger.error("context_cleanup_trigger_failed", error=str(e))
+        logger.exception("context_cleanup_trigger_failed")
         raise HTTPException(status_code=500, detail="Failed to trigger context cleanup")
 
 @router.post("/analytics/aggregate")
@@ -297,7 +297,7 @@ async def trigger_usage_aggregation(
         }
     
     except Exception as e:
-        logger.error("usage_aggregation_trigger_failed", error=str(e))
+        logger.exception("usage_aggregation_trigger_failed")
         raise HTTPException(status_code=500, detail="Failed to trigger usage aggregation")
 
 @router.get("/health")
@@ -414,7 +414,7 @@ async def worker_health_check():
             
             # Worker availability (20% weight)
             if len(active_workers) == 0:
-                health_score -= 20
+                health_score -= 20  # Major deduction for no workers
             elif all(w.get("state") == "busy" for w in worker_info if "error" not in w):
                 health_score -= 5  # Minor penalty for all workers busy
             
@@ -428,12 +428,12 @@ async def worker_health_check():
             )
             
         except Exception as e:
-            logger.warning("worker_metrics_recording_failed", error=str(e))
-        
+            logger.warning("worker_metrics_recording_failed", exc_info=True)
+ 
         return result
     
     except Exception as e:
-        logger.error("worker_health_check_failed", error=str(e))
+        logger.exception("worker_health_check_failed")
         return {
             "status": "unhealthy",
             "error": str(e),
@@ -459,7 +459,7 @@ async def get_failed_jobs_list(
         }
     
     except Exception as e:
-        logger.error("failed_jobs_list_failed", error=str(e))
+        logger.exception("failed_jobs_list_failed")
         raise HTTPException(status_code=500, detail="Failed to get failed jobs list")
 
 
@@ -488,7 +488,7 @@ async def retry_failed_job_endpoint(
     except HTTPException:
         raise
     except Exception as e:
-        logger.error("job_retry_endpoint_failed", job_id=job_id, error=str(e))
+        logger.exception("job_retry_endpoint_failed", job_id=job_id)
         raise HTTPException(status_code=500, detail="Failed to retry job")
 
 
@@ -510,7 +510,7 @@ async def retry_all_failed_jobs_endpoint(
         return result
     
     except Exception as e:
-        logger.error("bulk_retry_endpoint_failed", error=str(e))
+        logger.exception("bulk_retry_endpoint_failed")
         raise HTTPException(status_code=500, detail="Failed to retry failed jobs")
 
 
@@ -529,7 +529,7 @@ async def cleanup_old_failed_jobs_endpoint(
         }
     
     except Exception as e:
-        logger.error("failed_jobs_cleanup_endpoint_failed", error=str(e))
+        logger.exception("failed_jobs_cleanup_endpoint_failed")
         raise HTTPException(status_code=500, detail="Failed to cleanup old failed jobs")
 
 
@@ -596,6 +596,5 @@ async def get_detailed_worker_metrics(
         }
     
     except Exception as e:
-        logger.error("detailed_metrics_failed", error=str(e))
+        logger.exception("detailed_metrics_failed")
         raise HTTPException(status_code=500, detail="Failed to get detailed worker metrics")
-

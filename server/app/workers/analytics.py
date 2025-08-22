@@ -84,10 +84,9 @@ def aggregate_daily_usage_stats(date: Optional[str] = None) -> Dict[str, Any]:
             
             logger.info("daily_usage_aggregation_completed", **results)
             return results
-    
     except Exception as e:
         error_msg = f"Daily usage aggregation failed: {str(e)}"
-        logger.error("daily_usage_aggregation_failed", error=error_msg)
+        logger.exception("daily_usage_aggregation_failed", message=error_msg)
         return {
             "error": error_msg,
             "date": target_date.isoformat() if 'target_date' in locals() else None,
@@ -188,10 +187,9 @@ def generate_usage_report(
             
             logger.info("usage_report_generation_completed", **results["summary"])
             return results
-    
     except Exception as e:
         error_msg = f"Usage report generation failed: {str(e)}"
-        logger.error("usage_report_generation_failed", error=error_msg)
+        logger.exception("usage_report_generation_failed", message=error_msg)
         return {
             "error": error_msg,
             "start_date": start_date,
@@ -321,7 +319,7 @@ def calculate_context_memory_stats() -> Dict[str, Any]:
     
     except Exception as e:
         error_msg = f"Context memory stats calculation failed: {str(e)}"
-        logger.error("context_memory_stats_calculation_failed", error=error_msg)
+        logger.exception("context_memory_stats_calculation_failed", message=error_msg)
         return {
             "error": error_msg,
             "calculation_time": datetime.utcnow().isoformat()

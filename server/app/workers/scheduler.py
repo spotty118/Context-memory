@@ -153,11 +153,10 @@ class ScheduledTasks:
                     logger.info("task_scheduled", name=task["name"], job_id=job.id)
             
             except Exception as e:
-                error_msg = f"Failed to schedule {task['name']}: {str(e)}"
-                logger.error("task_scheduling_failed", name=task["name"], error=str(e))
+                logger.exception("task_scheduling_failed", name=task["name"])
                 results["failed_jobs"].append({
                     "name": task["name"],
-                    "error": error_msg
+                    "error": str(e)
                 })
         
         logger.info("all_tasks_scheduled", 
@@ -278,11 +277,10 @@ class ScheduledTasks:
                 results["cancelled_jobs"].append(name)
                 logger.info("task_cancelled", name=name)
             except Exception as e:
-                error_msg = f"Failed to cancel {name}: {str(e)}"
-                logger.error("task_cancellation_failed", name=name, error=str(e))
+                logger.exception("task_cancellation_error", task_id=job.id)
                 results["failed_cancellations"].append({
                     "name": name,
-                    "error": error_msg
+                    "error": str(e)
                 })
         
         # Clear the scheduled jobs dict
@@ -319,7 +317,7 @@ class ScheduledTasks:
                 }
                 status["jobs"].append(job_status)
             except Exception as e:
-                logger.error("job_status_check_failed", name=name, error=str(e))
+                logger.exception("job_status_check_failed", name=name)
                 status["jobs"].append({
                     "name": name,
                     "error": str(e)
@@ -357,7 +355,7 @@ class ScheduledTasks:
         
         except Exception as e:
             error_msg = f"Failed to reschedule {task_name}: {str(e)}"
-            logger.error("task_rescheduling_failed", name=task_name, error=str(e))
+            logger.exception("task_rescheduling_failed", name=task_name)
             return {
                 "task_name": task_name,
                 "error": error_msg,

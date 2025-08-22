@@ -466,7 +466,7 @@ async def _run_benchmark_background(
             "error": str(e)
         })
         
-        logger.error("benchmark_failed", run_id=run_id, error=str(e))
+        logger.exception("benchmark_failed", run_id=run_id)
     
     finally:
         # Remove from active benchmarks
