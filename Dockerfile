@@ -53,7 +53,7 @@ COPY --from=builder /usr/local/bin /usr/local/bin
 
 # Copy application code
 COPY server/ ./server/
-COPY alembic.ini ./
+COPY server/alembic.ini ./
 
 # Create necessary directories
 RUN mkdir -p /app/logs /app/data && \
