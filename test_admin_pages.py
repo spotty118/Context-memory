@@ -15,15 +15,15 @@ def test_admin_pages():
     # Test login
     print("\n1. Testing Login...")
     login_data = {
-        'username': 'admin',
-        'password': 'admin123'
+        'username': 'your',
+        'password': 'super'
     }
     
-    login_resp = session.post(f'{base_url}/admin/login', json=login_data)
+    login_resp = session.post(f'{base_url}/admin/login', data=login_data, allow_redirects=False)
     print(f"   Login response: {login_resp.status_code}")
     
-    if login_resp.status_code == 200:
-        print("   ✓ Login successful")
+    if login_resp.status_code == 302:
+        print("   ✓ Login successful (redirected)")
         
         # Check if we got a JWT token in cookies
         if 'admin_token' in session.cookies:

@@ -449,9 +449,9 @@ async def workers_page(request: Request):
         "failed_jobs": 2,
         "completed_jobs": 1458,
         "details": {
-            "embeddings": {"pending": 10, "processing": 2, "completed": 450},
-            "indexing": {"pending": 8, "processing": 1, "completed": 320},
-            "cleanup": {"pending": 5, "processing": 0, "completed": 688}
+            "embeddings": {"pending": 10, "processing": 2, "completed": 450, "failed_count": 3},
+            "indexing": {"pending": 8, "processing": 1, "completed": 320, "failed_count": 1},
+            "cleanup": {"pending": 5, "processing": 0, "completed": 688, "failed_count": 0}
         }
     }
     
