@@ -280,7 +280,7 @@ async def api_keys_list(
             "api_keys": [], "search_query": q or "", "error": str(e), "page_title": "API Keys"
         })
 
-@router.post("/keys/generate", response_class=HTMLResponse)
+@router.post("/api-keys/generate", response_class=HTMLResponse)
 async def generate_api_key(
     request: Request, 
     db: AsyncSession = Depends(get_db_dependency), 
@@ -293,19 +293,104 @@ async def generate_api_key(
     if not admin_user:
         return RedirectResponse(url="/admin/login", status_code=302)
     try:
-        new_key = f"cmg_{''.join(secrets.choice('abcdefghijklmnopqrstuvwxyz0123456789') for _ in range(32))}"
+        # Generate API key with proper prefix
+        new_key = f"{app_settings.API_KEY_PREFIX}{''.join(secrets.choice('abcdefghijklmnopqrstuvwxyz0123456789') for _ in range(app_settings.API_KEY_LENGTH))}"
         key_hash = hashlib.sha256(new_key.encode()).hexdigest()
-        key_prefix = new_key[:8] + "..."
         
-        api_key = APIKey(key_hash=key_hash, workspace_id="default", name=name, active=True, daily_quota_tokens=100000, created_at=datetime.utcnow())
+        # Create API key record
+        api_key = APIKey(
+            key_hash=key_hash,
+            workspace_id="default", 
+            name=name,
+            active=True,
+            daily_quota_tokens=app_settings.DEFAULT_DAILY_QUOTA_TOKENS,
+            rpm_limit=app_settings.RATE_LIMIT_REQUESTS
+        )
         db.add(api_key)
         await db.commit()
+        await db.refresh(api_key)
         
-        logger.info("Generated new API key", key_prefix=key_prefix, name=name)
-        return RedirectResponse(url="/admin/api-keys?success=generated", status_code=302)
+        logger.info("Generated new API key", key_id=api_key.key_hash[:12], name=name)
+        
+        # Return the new key (only shown once)
+        return templates.TemplateResponse("api_key_created.html", {
+            "request": request,
+            "new_key": new_key,
+            "api_key": api_key,
+            "page_title": "API Key Created"
+        })
     except Exception as e:
         logger.exception("generate_key_error")
         return RedirectResponse(url="/admin/api-keys?error=generation_failed", status_code=302)
+
+@router.post("/api-keys/{key_id}/suspend")
+async def suspend_api_key(request: Request, key_id: str, db: AsyncSession = Depends(get_db_dependency)):
+    """Suspend an API key."""
+    admin_user = await require_admin_auth(request)
+    if not admin_user:
+        return RedirectResponse(url="/admin/login", status_code=302)
+    
+    try:
+        result = await db.execute(select(APIKey).where(APIKey.key_hash == key_id))
+        api_key = result.scalar_one_or_none()
+        
+        if not api_key:
+            return JSONResponse({"success": False, "message": "API key not found"}, status_code=404)
+        
+        api_key.active = False
+        await db.commit()
+        
+        logger.info("API key suspended", key_id=key_id[:12])
+        return await api_keys_list(request, db)
+    except Exception as e:
+        logger.exception("suspend_api_key_error", key_id=key_id)
+        return JSONResponse({"success": False, "message": str(e)}, status_code=500)
+
+@router.post("/api-keys/{key_id}/activate")
+async def activate_api_key(request: Request, key_id: str, db: AsyncSession = Depends(get_db_dependency)):
+    """Activate an API key."""
+    admin_user = await require_admin_auth(request)
+    if not admin_user:
+        return RedirectResponse(url="/admin/login", status_code=302)
+    
+    try:
+        result = await db.execute(select(APIKey).where(APIKey.key_hash == key_id))
+        api_key = result.scalar_one_or_none()
+        
+        if not api_key:
+            return JSONResponse({"success": False, "message": "API key not found"}, status_code=404)
+        
+        api_key.active = True
+        await db.commit()
+        
+        logger.info("API key activated", key_id=key_id[:12])
+        return await api_keys_list(request, db)
+    except Exception as e:
+        logger.exception("activate_api_key_error", key_id=key_id)
+        return JSONResponse({"success": False, "message": str(e)}, status_code=500)
+
+@router.delete("/api-keys/{key_id}")
+async def delete_api_key(request: Request, key_id: str, db: AsyncSession = Depends(get_db_dependency)):
+    """Delete an API key."""
+    admin_user = await require_admin_auth(request)
+    if not admin_user:
+        return RedirectResponse(url="/admin/login", status_code=302)
+    
+    try:
+        result = await db.execute(select(APIKey).where(APIKey.key_hash == key_id))
+        api_key = result.scalar_one_or_none()
+        
+        if not api_key:
+            return JSONResponse({"success": False, "message": "API key not found"}, status_code=404)
+        
+        await db.delete(api_key)
+        await db.commit()
+        
+        logger.info("API key deleted", key_id=key_id[:12])
+        return await api_keys_list(request, db)
+    except Exception as e:
+        logger.exception("delete_api_key_error", key_id=key_id)
+        return JSONResponse({"success": False, "message": str(e)}, status_code=500)
 
 @router.get("/workers", response_class=HTMLResponse)
 async def workers_monitoring(
@@ -535,36 +620,17 @@ async def fetch_openrouter_models(request: Request):
 async def api_keys_create_form(request: Request, db: AsyncSession = Depends(get_db_dependency)):
     """API key creation form."""
     try:
-        # Get stats for the template
-        total_keys = await db.execute(select(func.count(APIKey.key_hash)))
-        active_keys = await db.execute(select(func.count(APIKey.key_hash)).where(APIKey.active == True))
-        suspended_keys = await db.execute(select(func.count(APIKey.key_hash)).where(APIKey.active == False))
-        total_requests = await db.execute(select(func.sum(UsageStats.clicks + UsageStats.references)))
+        admin_user = await require_admin_auth(request)
+        if not admin_user:
+            return RedirectResponse(url="/admin/login", status_code=302)
         
-        stats = {
-            "total_keys": total_keys.scalar() or 0,
-            "active_keys": active_keys.scalar() or 0,
-            "suspended_keys": suspended_keys.scalar() or 0,
-            "total_requests": total_requests.scalar() or 0
-        }
-        
-        return templates.TemplateResponse("api_keys.html", {
+        return templates.TemplateResponse("api_key_create_form.html", {
             "request": request,
-            "page_title": "Create API Key",
-            "show_create_form": True,
-            "stats": stats,
-            "api_keys": []
+            "page_title": "Create API Key"
         })
     except Exception as e:
-        logger.exception("api_keys_create_form_error")
-        return templates.TemplateResponse("api_keys.html", {
-            "request": request,
-            "page_title": "Create API Key",
-            "show_create_form": True,
-            "stats": {"active_keys": 0, "suspended_keys": 0, "total_requests": 0},
-            "api_keys": [],
-            "error": str(e)
-        })
+        logger.exception("api_key_create_form_error")
+        return JSONResponse({"error": str(e)}, status_code=500)
 
 @router.get("/context", response_class=HTMLResponse)
 async def admin_context(request: Request, db: AsyncSession = Depends(get_db_dependency)):
