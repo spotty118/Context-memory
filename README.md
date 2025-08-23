@@ -59,7 +59,7 @@ A cloud-hosted service providing LLM gateway functionality with advanced context
 1. **Clone the repository**
    ```bash
    git clone <repository-url>
-   cd context-memory-gateway
+   cd Context-memory
    ```
 
 2. **Setup environment**
@@ -124,6 +124,29 @@ The development environment includes:
 - **nginx**: Reverse proxy (optional)
 - **prometheus**: Metrics collection (optional)
 - **grafana**: Monitoring dashboard (optional)
+
+## ⚙️ Troubleshooting
+
+- First run fails because .env is missing
+  - The dev script expects a .env file. Create one from the template:
+    - cp .env.example .env
+    - Set at least SECRET_KEY and, if you want to fetch models, OPENROUTER_API_KEY.
+
+- Admin login doesn’t persist
+  - Make sure you’re accessing over http://localhost (not file://) so the httponly cookie can be set.
+  - Cookie name is admin_token in this build; clearing cookies for localhost can help during dev.
+
+- Workers page shows errors when Redis is down
+  - Redis is required for queue metrics. Start via ./scripts/dev.sh start (brings up redis) or docker-compose -f docker-compose.local.yml up redis.
+  - The page should render with zeros even if Redis is unavailable.
+
+- Models fetch returns 500
+  - This requires a valid OPENROUTER_API_KEY in your .env. Without it, the /admin/models/fetch endpoint will respond with an error JSON, but the rest of the UI will continue to work.
+
+- Healthcheck failing for app container
+  - Ensure postgres and redis services are healthy first. The app depends on both becoming healthy.
+  - Run ./scripts/dev.sh status to inspect container health.
+
 
 ## 📚 API Documentation
 
