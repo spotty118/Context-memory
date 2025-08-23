@@ -447,7 +447,12 @@ async def workers_page(request: Request):
         "total_queued_jobs": 42,
         "processing_jobs": 8,
         "failed_jobs": 2,
-        "completed_jobs": 1458
+        "completed_jobs": 1458,
+        "details": {
+            "embeddings": {"pending": 10, "processing": 2, "completed": 450},
+            "indexing": {"pending": 8, "processing": 1, "completed": 320},
+            "cleanup": {"pending": 5, "processing": 0, "completed": 688}
+        }
     }
     
     return templates.TemplateResponse("workers.html", {
