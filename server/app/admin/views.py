@@ -28,6 +28,13 @@ logger = structlog.get_logger(__name__)
 # Setup templates
 templates = Jinja2Templates(directory=Path(__file__).parent / "templates")
 
+# Favicon route
+@router.get("/favicon.ico")
+async def favicon():
+    """Return favicon - for now just return 204 No Content to avoid 404s."""
+    from fastapi import Response
+    return Response(status_code=204)
+
 # Admin authentication helper
 async def require_admin_auth(request: Request) -> Optional[AdminUser]:
     """Check admin authentication and return user or redirect to login."""
@@ -221,7 +228,7 @@ async def dashboard(
         logger.exception("dashboard_error")
         return templates.TemplateResponse("dashboard.html", {"request": request, "stats": stats, "error": str(e), "page_title": "Dashboard"})
 
-@router.get("/keys", response_class=HTMLResponse)
+@router.get("/api-keys", response_class=HTMLResponse)
 async def api_keys_list(
     request: Request, 
     db: AsyncSession = Depends(get_db_dependency), 
