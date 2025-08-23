@@ -253,12 +253,11 @@ async def generate_api_key(request: Request, db: AsyncSession = Depends(get_db_d
         # Create API key record
         api_key = APIKey(
             key_hash=key_hash,
+            workspace_id="default",
             name=name,
-            description=description,
             active=True,
             daily_quota_tokens=app_settings.DEFAULT_DAILY_QUOTA_TOKENS,
-            rate_limit_requests=app_settings.RATE_LIMIT_REQUESTS,
-            created_at=datetime.utcnow()
+            rpm_limit=app_settings.RATE_LIMIT_REQUESTS
         )
         
         db.add(api_key)
