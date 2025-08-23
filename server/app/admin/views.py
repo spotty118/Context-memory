@@ -266,13 +266,8 @@ async def generate_api_key(request: Request, db: AsyncSession = Depends(get_db_d
         
         return templates.TemplateResponse("api_key_created.html", {
             "request": request,
-            "api_key": key_value,
-            "key_info": {
-                "name": name,
-                "description": description,
-                "daily_quota": app_settings.DEFAULT_DAILY_QUOTA_TOKENS,
-                "rate_limit": app_settings.RATE_LIMIT_REQUESTS
-            },
+            "new_key": key_value,
+            "api_key": api_key,
             "page_title": "API Key Created"
         })
     except Exception as e:
