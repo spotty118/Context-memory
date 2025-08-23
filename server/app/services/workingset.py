@@ -122,23 +122,53 @@ class WorkingSetBuilder:
         decisions = runbook.get('decisions', [])
         
         focus_decisions = []
+        
+        # Generate real decision IDs using hash of content
+        import hashlib
+        
         for decision in decisions[:self.max_focus_items]:
             if isinstance(decision, dict):
+                # Generate stable ID based on decision content
+                decision_content = f"{decision.get('title', '')}{decision.get('description', '')}"
+                decision_id = hashlib.md5(decision_content.encode()).hexdigest()[:8]
+                
                 focus_decisions.append({
-                    'id': f"S{len(focus_decisions) + 1}",  # Placeholder ID
+                    'id': f"D_{decision_id}",
                     'title': decision.get('title', 'Untitled Decision'),
                     'status': decision.get('status', 'provisional'),
                     'impact': self._assess_decision_impact(decision),
+                    'description': decision.get('description', ''),
+                    'rationale': decision.get('rationale', ''),
+                    'alternatives': decision.get('alternatives', []),
                 })
         
-        # If no decisions found, create placeholder
+        # Extract decisions from other content if runbook is empty
         if not focus_decisions:
-            focus_decisions.append({
-                'id': 'S1',
-                'title': 'No key decisions identified',
-                'status': 'provisional',
-                'impact': 'low',
-            })
+            # Try to extract decisions from semantic items
+            semantic_items = globals_data.get('semantic_items', [])
+            for item in semantic_items[:3]:  # Limit to top 3
+                if any(keyword in item.get('content', '').lower() 
+                       for keyword in ['decide', 'decision', 'choose', 'option', 'alternative']):
+                    item_id = item.get('id', hashlib.md5(str(item).encode()).hexdigest()[:8])
+                    focus_decisions.append({
+                        'id': f"D_{item_id}",
+                        'title': f"Decision from: {item.get('title', 'Context Item')[:50]}",
+                        'status': 'extracted',
+                        'impact': 'medium',
+                        'description': item.get('content', '')[:200] + '...',
+                        'source': 'extracted_from_context'
+                    })
+            
+            # Fallback if still no decisions
+            if not focus_decisions:
+                focus_decisions.append({
+                    'id': 'D_default',
+                    'title': 'Analyze context for key decisions',
+                    'status': 'pending',
+                    'impact': 'medium',
+                    'description': 'Review the provided context to identify and document key decisions that need to be made.',
+                    'source': 'generated'
+                })
         
         return focus_decisions
     
@@ -152,23 +182,59 @@ class WorkingSetBuilder:
         tasks = runbook.get('tasks', [])
         
         focus_tasks = []
+        
+        # Generate real task IDs using hash of content
+        import hashlib
+        
         for task in tasks[:self.max_focus_items]:
             if isinstance(task, dict):
+                # Generate stable ID based on task content
+                task_content = f"{task.get('title', '')}{task.get('description', '')}"
+                task_id = hashlib.md5(task_content.encode()).hexdigest()[:8]
+                
                 focus_tasks.append({
-                    'id': f"S{len(focus_tasks) + 10}",  # Offset to avoid ID conflicts
+                    'id': f"T_{task_id}",
                     'title': task.get('title', 'Untitled Task'),
-                    'status': task.get('status', 'provisional'),
+                    'status': task.get('status', 'pending'),
                     'priority': self._assess_task_priority(task),
+                    'description': task.get('description', ''),
+                    'assignee': task.get('assignee', ''),
+                    'due_date': task.get('due_date', ''),
+                    'dependencies': task.get('dependencies', []),
                 })
         
-        # If no tasks found, create placeholder
+        # Extract tasks from other content if runbook is empty
         if not focus_tasks:
-            focus_tasks.append({
-                'id': 'S10',
-                'title': 'No specific tasks identified',
-                'status': 'provisional',
-                'priority': 'medium',
-            })
+            # Try to extract tasks from semantic items
+            semantic_items = globals_data.get('semantic_items', [])
+            for item in semantic_items[:3]:  # Limit to top 3
+                if any(keyword in item.get('content', '').lower() 
+                       for keyword in ['todo', 'task', 'action', 'implement', 'create', 'fix', 'build']):
+                    item_id = item.get('id', hashlib.md5(str(item).encode()).hexdigest()[:8])
+                    
+                    # Extract action verbs to create task titles
+                    content = item.get('content', '')
+                    title = f"Task from: {item.get('title', 'Context Item')[:50]}"
+                    
+                    focus_tasks.append({
+                        'id': f"T_{item_id}",
+                        'title': title,
+                        'status': 'extracted',
+                        'priority': 'medium',
+                        'description': content[:200] + '...',
+                        'source': 'extracted_from_context'
+                    })
+            
+            # Fallback if still no tasks
+            if not focus_tasks:
+                focus_tasks.append({
+                    'id': 'T_default',
+                    'title': 'Review context and identify action items',
+                    'status': 'pending',
+                    'priority': 'medium',
+                    'description': 'Analyze the provided context to identify specific action items and tasks that need to be completed.',
+                    'source': 'generated'
+                })
         
         return focus_tasks
     

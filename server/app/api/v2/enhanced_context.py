@@ -112,23 +112,83 @@ async def ingest_multimodal_content(
         collaboration_mode=payload.collaboration_mode
     )
     
-    # Placeholder for V2 implementation
-    result = {
-        "thread_id": payload.thread_id,
-        "content_type": payload.content_type,
-        "enhanced_features_used": {
-            "multimodal_support": True,
-            "enhanced_scoring": payload.enhanced_scoring,
-            "collaboration_mode": payload.collaboration_mode,
-            "auto_translation": payload.auto_translation
-        },
-        "items_created": {
-            "semantic_items": 0,  # Would be implemented
-            "episodic_items": 0,  # Would be implemented
-            "multimodal_items": 1 if uploaded_file else 0
-        },
-        "status": "success"
-    }
+    # Real V2 multimodal implementation
+    from app.services.extractor import ContextExtractor
+    from app.db.models import SemanticItem, EpisodicItem, Artifact
+    from datetime import datetime
+    import hashlib
+    import os
+    
+    items_created = {"semantic_items": 0, "episodic_items": 0, "multimodal_items": 0, "artifacts": 0}
+    
+    try:
+        # Handle uploaded file if present
+        file_metadata = None
+        if uploaded_file:
+            # Generate file hash and metadata
+            file_content = await uploaded_file.read()
+            file_hash = hashlib.sha256(file_content).hexdigest()
+            file_metadata = {
+                "filename": uploaded_file.filename,
+                "content_type": uploaded_file.content_type,
+                "size": len(file_content),
+                "hash": file_hash
+            }
+            
+            # Create artifact record
+            artifact = Artifact(
+                id=file_hash,
+                thread_id=payload.thread_id,
+                workspace_id=api_key.workspace_id,
+                name=uploaded_file.filename,
+                content_type=uploaded_file.content_type,
+                size=len(file_content),
+                storage_path=f"multimodal/{api_key.workspace_id}/{payload.thread_id}/{file_hash}",
+                metadata=file_metadata,
+                created_at=datetime.utcnow()
+            )
+            db.add(artifact)
+            items_created["artifacts"] += 1
+            items_created["multimodal_items"] += 1
+        
+        # Process text content if provided
+        if payload.text_content:
+            extractor = ContextExtractor()
+            extraction_result = await extractor.extract_context(
+                materials={"text": payload.text_content},
+                thread_id=payload.thread_id,
+                workspace_id=api_key.workspace_id,
+                enhanced_mode=payload.enhanced_scoring
+            )
+            
+            items_created["semantic_items"] = extraction_result.get("semantic_items_created", 0)
+            items_created["episodic_items"] = extraction_result.get("episodic_items_created", 0)
+        
+        await db.commit()
+        
+        result = {
+            "thread_id": payload.thread_id,
+            "content_type": payload.content_type,
+            "enhanced_features_used": {
+                "multimodal_support": True,
+                "enhanced_scoring": payload.enhanced_scoring,
+                "collaboration_mode": payload.collaboration_mode,
+                "auto_translation": payload.auto_translation
+            },
+            "items_created": items_created,
+            "file_metadata": file_metadata,
+            "status": "success"
+        }
+        
+    except Exception as e:
+        await db.rollback()
+        logger.exception("multimodal_ingest_error", thread_id=payload.thread_id)
+        result = {
+            "thread_id": payload.thread_id,
+            "status": "error",
+            "error": str(e),
+            "items_created": {"semantic_items": 0, "episodic_items": 0, "multimodal_items": 0}
+        }
     
     return version_aware_response(result, request)
 
@@ -212,14 +272,46 @@ async def get_collaboration_status(
         thread_id=thread_id
     )
     
-    # Placeholder for V2 implementation
-    status = CollaborationStatus(
-        thread_id=thread_id,
-        active_users=["user1", "user2"],  # Would be dynamic
-        last_updated=datetime.utcnow(),
-        pending_changes=0,
-        sync_status="synchronized"
-    )
+    # Real collaboration status implementation using Redis
+    from app.core.redis import get_redis_client
+    
+    try:
+        redis_client = await get_redis_client()
+        
+        # Get active users from Redis
+        active_users_key = f"collaboration:{thread_id}:active_users"
+        active_users = await redis_client.smembers(active_users_key) or []
+        
+        # Get last updated timestamp
+        last_updated_key = f"collaboration:{thread_id}:last_updated"
+        last_updated_str = await redis_client.get(last_updated_key)
+        last_updated = datetime.fromisoformat(last_updated_str) if last_updated_str else datetime.utcnow()
+        
+        # Get pending changes count
+        pending_changes_key = f"collaboration:{thread_id}:pending_changes"
+        pending_changes = int(await redis_client.get(pending_changes_key) or 0)
+        
+        # Determine sync status
+        sync_status = "synchronized" if pending_changes == 0 else "pending_sync"
+        
+        status = CollaborationStatus(
+            thread_id=thread_id,
+            active_users=list(active_users),
+            last_updated=last_updated,
+            pending_changes=pending_changes,
+            sync_status=sync_status
+        )
+        
+    except Exception as e:
+        logger.exception("collaboration_status_error", thread_id=thread_id)
+        # Fallback to minimal status
+        status = CollaborationStatus(
+            thread_id=thread_id,
+            active_users=[],
+            last_updated=datetime.utcnow(),
+            pending_changes=0,
+            sync_status="error"
+        )
     
     return status
 
@@ -243,14 +335,49 @@ async def join_collaboration_session(
         user_id=user_id
     )
     
-    # Placeholder for V2 implementation
-    result = {
-        "thread_id": thread_id,
-        "user_id": user_id,
-        "status": "joined",
-        "session_token": "collaboration_session_token_placeholder",
-        "websocket_url": f"wss://api.example.com/v2/collaboration/{thread_id}/ws"
-    }
+    # Real collaboration join implementation
+    from app.core.redis import get_redis_client
+    import secrets
+    
+    try:
+        redis_client = await get_redis_client()
+        
+        # Add user to active users set
+        active_users_key = f"collaboration:{thread_id}:active_users"
+        await redis_client.sadd(active_users_key, user_id)
+        await redis_client.expire(active_users_key, 3600)  # Expire in 1 hour
+        
+        # Update last activity
+        last_updated_key = f"collaboration:{thread_id}:last_updated"
+        await redis_client.set(last_updated_key, datetime.utcnow().isoformat())
+        
+        # Generate session token
+        session_token = secrets.token_urlsafe(32)
+        session_key = f"collaboration:{thread_id}:session:{user_id}"
+        await redis_client.setex(session_key, 3600, session_token)  # 1 hour expiry
+        
+        # Get current host from request
+        host = request.headers.get("host", "localhost:8000")
+        ws_protocol = "wss" if request.url.scheme == "https" else "ws"
+        
+        result = {
+            "thread_id": thread_id,
+            "user_id": user_id,
+            "status": "joined",
+            "session_token": session_token,
+            "websocket_url": f"{ws_protocol}://{host}/v2/collaboration/{thread_id}/ws",
+            "expires_at": (datetime.utcnow().timestamp() + 3600)
+        }
+        
+    except Exception as e:
+        logger.exception("collaboration_join_error", thread_id=thread_id, user_id=user_id)
+        raise HTTPException(
+            status_code=500,
+            detail={
+                "error": "collaboration_join_failed",
+                "message": "Failed to join collaboration session"
+            }
+        )
     
     return version_aware_response(result, request)
 

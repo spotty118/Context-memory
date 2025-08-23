@@ -227,16 +227,76 @@ async def _update_item_salience(item_id: str, salience_delta: float, db: AsyncSe
 
 
 async def _schedule_rehearsal(item_id: str, thread_id: str, db: AsyncSession) -> None:
-    """Schedule rehearsal for the item (placeholder implementation)."""
-    # In a full implementation, this would:
-    # 1. Calculate next rehearsal time based on spaced repetition algorithm
-    # 2. Add entry to rehearsal schedule table
-    # 3. Set up background job to surface item at appropriate time
+    """Schedule rehearsal for the item using spaced repetition algorithm."""
+    from app.core.redis import get_redis_client
+    from datetime import timedelta
+    import math
     
-    logger.debug(
-        "rehearsal_scheduled",
-        item_id=item_id,
-        thread_id=thread_id,
-        note="Placeholder implementation - full rehearsal scheduling not implemented"
-    )
+    try:
+        # Get Redis client for scheduling
+        redis_client = await get_redis_client()
+        
+        # Get current rehearsal count for this item
+        rehearsal_key = f"rehearsal:{item_id}:count"
+        rehearsal_count = int(await redis_client.get(rehearsal_key) or 0)
+        
+        # Spaced repetition intervals (in hours): 1, 4, 12, 24, 72, 168 (1 week), 720 (1 month)
+        intervals = [1, 4, 12, 24, 72, 168, 720]
+        
+        # Calculate next rehearsal time
+        if rehearsal_count < len(intervals):
+            next_interval_hours = intervals[rehearsal_count]
+        else:
+            # For items rehearsed many times, use exponential backoff
+            next_interval_hours = 720 * (2 ** (rehearsal_count - len(intervals) + 1))
+            # Cap at 6 months
+            next_interval_hours = min(next_interval_hours, 4320)
+        
+        next_rehearsal_time = datetime.utcnow() + timedelta(hours=next_interval_hours)
+        
+        # Store rehearsal schedule in Redis sorted set
+        rehearsal_queue_key = f"rehearsal_queue:{thread_id}"
+        rehearsal_score = next_rehearsal_time.timestamp()
+        
+        rehearsal_data = {
+            "item_id": item_id,
+            "thread_id": thread_id,
+            "scheduled_at": next_rehearsal_time.isoformat(),
+            "rehearsal_count": rehearsal_count + 1,
+            "interval_hours": next_interval_hours
+        }
+        
+        # Add to sorted set with timestamp as score
+        await redis_client.zadd(
+            rehearsal_queue_key, 
+            {f"{item_id}:{rehearsal_count + 1}": rehearsal_score}
+        )
+        
+        # Store rehearsal metadata
+        rehearsal_meta_key = f"rehearsal:{item_id}:{rehearsal_count + 1}:meta"
+        await redis_client.setex(
+            rehearsal_meta_key, 
+            int(next_interval_hours * 3600 * 2),  # Store for 2x the interval
+            json.dumps(rehearsal_data)
+        )
+        
+        # Update rehearsal count
+        await redis_client.incr(rehearsal_key)
+        await redis_client.expire(rehearsal_key, int(next_interval_hours * 3600 * 2))
+        
+        logger.info(
+            "rehearsal_scheduled",
+            item_id=item_id,
+            thread_id=thread_id,
+            next_rehearsal=next_rehearsal_time.isoformat(),
+            interval_hours=next_interval_hours,
+            rehearsal_count=rehearsal_count + 1
+        )
+        
+    except Exception as e:
+        logger.exception(
+            "rehearsal_scheduling_error",
+            item_id=item_id,
+            thread_id=thread_id
+        )
 
