@@ -59,7 +59,7 @@ async def login_submit(request: Request, username: str = Form(...), password: st
     """Handle admin login."""
     try:
         if await authenticate_admin(username, password):
-            token = await create_admin_jwt(username)
+            token = create_admin_jwt(username)
             response = RedirectResponse(url="/admin/dashboard", status_code=302)
             response.set_cookie(
                 key="admin_token",
