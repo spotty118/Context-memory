@@ -81,19 +81,29 @@
 <script>
 function copyApiKey() {
     const keyInput = document.getElementById('api-key-value');
-    keyInput.select();
-    document.execCommand('copy');
-    
-    // Show feedback
-    const button = event.target.closest('button');
-    const icon = button.querySelector('i');
-    icon.setAttribute('data-lucide', 'check');
-    lucide.createIcons();
-    
-    setTimeout(() => {
-        icon.setAttribute('data-lucide', 'copy');
-        lucide.createIcons();
-    }, 2000);
+    if (keyInput) {
+        keyInput.select();
+        document.execCommand('copy');
+        
+        // Show feedback
+        const button = event.target.closest('button');
+        if (button) {
+            const icon = button.querySelector('i');
+            if (icon) {
+                icon.setAttribute('data-lucide', 'check');
+                if (typeof lucide !== 'undefined') {
+                    lucide.createIcons();
+                }
+                
+                setTimeout(() => {
+                    icon.setAttribute('data-lucide', 'copy');
+                    if (typeof lucide !== 'undefined') {
+                        lucide.createIcons();
+                    }
+                }, 2000);
+            }
+        }
+    }
 }
 </script>
 {% endblock %}
