@@ -187,12 +187,11 @@ async def api_keys_list(request: Request, db: AsyncSession = Depends(get_db_depe
         # Get statistics
         active_count_result = await db.execute(select(func.count(APIKey.key_hash)).where(APIKey.active == True))
         suspended_count_result = await db.execute(select(func.count(APIKey.key_hash)).where(APIKey.active == False))
-        total_requests_result = await db.execute(select(func.coalesce(func.sum(APIKey.total_requests), 0)))
         
         stats = {
             "active_keys": active_count_result.scalar() or 0,
             "suspended_keys": suspended_count_result.scalar() or 0,
-            "total_requests": total_requests_result.scalar() or 0
+            "total_requests": 0  # Can be calculated from UsageLedger if needed
         }
         
         # Format API keys for template
@@ -205,7 +204,7 @@ async def api_keys_list(request: Request, db: AsyncSession = Depends(get_db_depe
                 "created_at": key.created_at.strftime("%Y-%m-%d %H:%M") if key.created_at else "Unknown",
                 "workspace": key.workspace_id or "Default",
                 "daily_quota": key.daily_quota_tokens or 200000,
-                "rate_limit": key.rate_limit_requests or 60
+                "rate_limit": key.rpm_limit or 60
             })
         
         return templates.TemplateResponse("api_keys.html", {

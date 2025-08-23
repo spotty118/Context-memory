@@ -79,30 +79,34 @@
 </div>
 
 <script>
-function copyApiKey() {
+function copyApiKey(event) {
+    event = event || window.event;
     const keyInput = document.getElementById('api-key-value');
     if (keyInput) {
         keyInput.select();
-        document.execCommand('copy');
-        
-        // Show feedback
-        const button = event.target.closest('button');
-        if (button) {
-            const icon = button.querySelector('i');
-            if (icon) {
-                icon.setAttribute('data-lucide', 'check');
-                if (typeof lucide !== 'undefined') {
-                    lucide.createIcons();
-                }
-                
-                setTimeout(() => {
-                    icon.setAttribute('data-lucide', 'copy');
+        navigator.clipboard.writeText(keyInput.value).then(() => {
+            // Show feedback
+            const button = event.target.closest('button');
+            if (button) {
+                const icon = button.querySelector('i');
+                if (icon) {
+                    icon.setAttribute('data-lucide', 'check');
                     if (typeof lucide !== 'undefined') {
                         lucide.createIcons();
                     }
-                }, 2000);
+                    
+                    setTimeout(() => {
+                        icon.setAttribute('data-lucide', 'copy');
+                        if (typeof lucide !== 'undefined') {
+                            lucide.createIcons();
+                        }
+                    }, 2000);
+                }
             }
-        }
+        }).catch(() => {
+            // Fallback to deprecated method if clipboard API fails
+            document.execCommand('copy');
+        });
     }
 }
 </script>
