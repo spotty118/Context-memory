@@ -12,7 +12,7 @@ import hashlib
 
 from app.db.session import get_db_dependency
 from app.db.models import APIKey, ModelCatalog, SemanticItem, EpisodicItem, Artifact, UsageStats
-from app.services.openrouter import fetch_all_models, OpenRouterError
+from app.api.openrouter import fetch_all_models, OpenRouterError
 from app.core.config import get_settings
 from app.core.security import (
     get_admin_user, authenticate_admin, create_admin_jwt, create_user,
