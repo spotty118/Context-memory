@@ -74,7 +74,7 @@ async def admin_login(
             response.set_cookie(
                 key="admin_session",
                 value=token,
-                max_age=settings.JWT_EXPIRE_MINUTES * 60,
+                max_age=get_settings().JWT_EXPIRE_MINUTES * 60,
                 httponly=True,
                 secure=settings.is_production,
                 samesite="lax"
@@ -158,7 +158,7 @@ async def admin_signup(
         response.set_cookie(
             key="admin_session",
             value=token,
-            max_age=settings.JWT_EXPIRE_MINUTES * 60,
+            max_age=get_settings().JWT_EXPIRE_MINUTES * 60,
             httponly=True,
             secure=settings.is_production,
             samesite="lax"
