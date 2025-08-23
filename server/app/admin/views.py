@@ -1161,66 +1161,6 @@ async def api_key_usage(request: Request, key_id: str, db: AsyncSession = Depend
         logger.exception("api_key_usage_error")
         return JSONResponse({"error": str(e)}, status_code=500)
 
-@router.post("/api-keys/{key_id}/suspend", response_class=JSONResponse)
-async def suspend_api_key(request: Request, key_id: str, db: AsyncSession = Depends(get_db_dependency)):
-    """Suspend an API key."""
-    try:
-        query = select(APIKey).where(APIKey.key_hash == key_id)
-        result = await db.execute(query)
-        api_key = result.scalar_one_or_none()
-        
-        if not api_key:
-            raise HTTPException(status_code=404, detail="API key not found")
-        
-        api_key.active = False
-        await db.commit()
-        
-        logger.info("Suspended API key", key_id=key_id[:8])
-        return JSONResponse({"success": True, "message": "API key suspended"})
-    except Exception as e:
-        logger.exception("suspend_api_key_error")
-        return JSONResponse({"error": str(e)}, status_code=500)
-
-@router.post("/api-keys/{key_id}/activate", response_class=JSONResponse)
-async def activate_api_key(request: Request, key_id: str, db: AsyncSession = Depends(get_db_dependency)):
-    """Activate an API key."""
-    try:
-        query = select(APIKey).where(APIKey.key_hash == key_id)
-        result = await db.execute(query)
-        api_key = result.scalar_one_or_none()
-        
-        if not api_key:
-            raise HTTPException(status_code=404, detail="API key not found")
-        
-        api_key.active = True
-        await db.commit()
-        
-        logger.info("Activated API key", key_id=key_id[:8])
-        return JSONResponse({"success": True, "message": "API key activated"})
-    except Exception as e:
-        logger.exception("reactivate_api_key_error")
-        return JSONResponse({"error": str(e)}, status_code=500)
-
-@router.delete("/api-keys/{key_id}", response_class=JSONResponse)
-async def delete_api_key(request: Request, key_id: str, db: AsyncSession = Depends(get_db_dependency)):
-    """Delete an API key."""
-    try:
-        query = select(APIKey).where(APIKey.key_hash == key_id)
-        result = await db.execute(query)
-        api_key = result.scalar_one_or_none()
-        
-        if not api_key:
-            raise HTTPException(status_code=404, detail="API key not found")
-        
-        await db.delete(api_key)
-        await db.commit()
-        
-        logger.info("Deleted API key", key_id=key_id[:8])
-        return JSONResponse({"success": True, "message": "API key deleted"})
-    except Exception as e:
-        logger.exception("delete_api_key_error")
-        return JSONResponse({"error": str(e)}, status_code=500)
-
 @router.get("/debug/models", response_class=JSONResponse)
 async def debug_models(request: Request, db: AsyncSession = Depends(get_db_dependency)):
     """Debug endpoint to check model storage."""
