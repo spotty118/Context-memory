@@ -170,7 +170,7 @@ async def dashboard(request: Request, db: AsyncSession = Depends(get_db_dependen
             "page_title": "Dashboard"
         })
 
-# API Keys Management
+# API Keys Management  
 @router.get("/api-keys", response_class=HTMLResponse)
 async def api_keys_list(request: Request, db: AsyncSession = Depends(get_db_dependency), q: Optional[str] = None):
     """API keys management page."""
