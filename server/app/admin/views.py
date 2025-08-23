@@ -442,10 +442,19 @@ async def workers_page(request: Request):
         "health_score": 95
     }
     
+    # Mock queue data
+    queues = {
+        "total_queued_jobs": 42,
+        "processing_jobs": 8,
+        "failed_jobs": 2,
+        "completed_jobs": 1458
+    }
+    
     return templates.TemplateResponse("workers.html", {
         "request": request,
         "stats": stats,
         "workers": workers,
+        "queues": queues,
         "page_title": "Workers"
     })
 
