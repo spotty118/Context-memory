@@ -205,22 +205,43 @@ async def dashboard(
         return RedirectResponse(url="/admin/login", status_code=302)
     try:
         stats = {
-            "total_api_keys": 0, "total_models": 0, "total_semantic_items": 0,
-            "total_episodic_items": 0, "total_artifacts": 0, "total_requests": 0, "status": "operational"
+            "total_api_keys": 0, "active_keys": 0, "suspended_keys": 0,
+            "total_models": 0, "active_models": 0,
+            "total_semantic_items": 0, "total_episodic_items": 0, 
+            "total_artifacts": 0, "total_requests": 0, 
+            "total_users": 0, "status": "operational"
         }
         try:
+            # API Key stats
             result = await db.execute(select(func.count(APIKey.key_hash)))
             stats["total_api_keys"] = result.scalar() or 0
+            result = await db.execute(select(func.count(APIKey.key_hash)).where(APIKey.active == True))
+            stats["active_keys"] = result.scalar() or 0
+            stats["suspended_keys"] = stats["total_api_keys"] - stats["active_keys"]
+            
+            # Model stats
             result = await db.execute(select(func.count(ModelCatalog.model_id)))
             stats["total_models"] = result.scalar() or 0
+            result = await db.execute(select(func.count(ModelCatalog.model_id)).where(ModelCatalog.status == "active"))
+            stats["active_models"] = result.scalar() or 0
+            
+            # Memory stats
             result = await db.execute(select(func.count(SemanticItem.id)))
             stats["total_semantic_items"] = result.scalar() or 0
             result = await db.execute(select(func.count(EpisodicItem.id)))
             stats["total_episodic_items"] = result.scalar() or 0
             result = await db.execute(select(func.count(Artifact.ref)))
             stats["total_artifacts"] = result.scalar() or 0
+            
+            # Usage stats
+            from app.db.models import User
+            result = await db.execute(select(func.count(User.id)))
+            stats["total_users"] = result.scalar() or 0
+            
+            # Calculate total requests from usage if available
             result = await db.execute(select(func.sum(UsageStats.clicks + UsageStats.references)))
             stats["total_requests"] = result.scalar() or 0
+            
         except Exception as e:
             logger.exception("dashboard_stats_error")
         return templates.TemplateResponse("dashboard.html", {"request": request, "stats": stats, "page_title": "Dashboard"})
@@ -614,6 +635,132 @@ async def fetch_openrouter_models(request: Request):
         return JSONResponse({
             "success": False,
             "error": "Failed to fetch models from OpenRouter"
+        }, status_code=500)
+
+@router.get("/models/sync-status", response_class=HTMLResponse)
+async def models_sync_status(request: Request, db: AsyncSession = Depends(get_db_dependency)):
+    """Get model sync status for HTMX updates."""
+    admin_user = await require_admin_auth(request)
+    if not admin_user:
+        return RedirectResponse(url="/admin/login", status_code=302)
+    
+    try:
+        # Get latest model sync time
+        latest_model = await db.execute(
+            select(ModelCatalog).order_by(ModelCatalog.updated_at.desc()).limit(1)
+        )
+        latest = latest_model.scalar_one_or_none()
+        
+        if latest:
+            last_sync = latest.updated_at.strftime("%Y-%m-%d at %H:%M UTC")
+            status_class = "bg-green-50 border-green-200"
+            icon_class = "text-green-400"
+            icon = "check-circle"
+            message = f"Last synced on {last_sync} • {await db.execute(select(func.count(ModelCatalog.model_id))).scalar() or 0} models available"
+        else:
+            status_class = "bg-yellow-50 border-yellow-200"
+            icon_class = "text-yellow-400"
+            icon = "clock"
+            message = "No models synced yet • Click 'Fetch OpenRouter Models' to get started"
+        
+        html = f'''
+        <div class="{status_class} border rounded-lg p-4">
+            <div class="flex items-center">
+                <div class="flex-shrink-0">
+                    <i data-lucide="{icon}" class="w-5 h-5 {icon_class}"></i>
+                </div>
+                <div class="ml-3">
+                    <p class="text-sm text-gray-700">{message}</p>
+                </div>
+            </div>
+        </div>
+        '''
+        
+        return HTMLResponse(content=html)
+    except Exception as e:
+        logger.exception("sync_status_error")
+        return HTMLResponse(content=f'''
+        <div class="bg-red-50 border border-red-200 rounded-lg p-4">
+            <div class="flex items-center">
+                <div class="flex-shrink-0">
+                    <i data-lucide="alert-circle" class="w-5 h-5 text-red-400"></i>
+                </div>
+                <div class="ml-3">
+                    <p class="text-sm text-red-700">Error checking sync status: {str(e)}</p>
+                </div>
+            </div>
+        </div>
+        ''')
+
+@router.post("/models/sync", response_class=JSONResponse)
+async def sync_models_from_openrouter(request: Request, db: AsyncSession = Depends(get_db_dependency)):
+    """Sync models from OpenRouter and update database."""
+    admin_user = await require_admin_auth(request)
+    if not admin_user:
+        return JSONResponse({"success": False, "error": "Unauthorized"}, status_code=401)
+    
+    try:
+        from app.api.openrouter import fetch_all_models
+        models_data = await fetch_all_models()
+        
+        updated_count = 0
+        new_count = 0
+        
+        for model_data in models_data:
+            model_id = model_data.get("id")
+            if not model_id:
+                continue
+                
+            # Check if model exists
+            existing = await db.execute(
+                select(ModelCatalog).where(ModelCatalog.model_id == model_id)
+            )
+            model = existing.scalar_one_or_none()
+            
+            if model:
+                # Update existing model
+                model.display_name = model_data.get("name", model_id)
+                model.provider = "openrouter"
+                model.context_window = model_data.get("context_length", 0)
+                model.input_price_per_1k = model_data.get("pricing", {}).get("prompt", 0)
+                model.output_price_per_1k = model_data.get("pricing", {}).get("completion", 0)
+                model.supports_vision = "vision" in model_data.get("id", "").lower()
+                model.supports_tools = True  # Most OpenRouter models support tools
+                model.updated_at = datetime.utcnow()
+                updated_count += 1
+            else:
+                # Create new model
+                new_model = ModelCatalog(
+                    model_id=model_id,
+                    display_name=model_data.get("name", model_id),
+                    provider="openrouter",
+                    status="active",
+                    context_window=model_data.get("context_length", 0),
+                    input_price_per_1k=model_data.get("pricing", {}).get("prompt", 0),
+                    output_price_per_1k=model_data.get("pricing", {}).get("completion", 0),
+                    supports_vision="vision" in model_data.get("id", "").lower(),
+                    supports_tools=True,
+                    created_at=datetime.utcnow(),
+                    updated_at=datetime.utcnow()
+                )
+                db.add(new_model)
+                new_count += 1
+        
+        await db.commit()
+        
+        logger.info("Models synced successfully", new_count=new_count, updated_count=updated_count)
+        return JSONResponse({
+            "success": True,
+            "message": f"Synced {new_count} new models, updated {updated_count} existing models",
+            "new_count": new_count,
+            "updated_count": updated_count
+        })
+        
+    except Exception as e:
+        logger.exception("sync_models_error")
+        return JSONResponse({
+            "success": False,
+            "error": str(e)
         }, status_code=500)
 
 @router.get("/api-keys/create", response_class=HTMLResponse)
