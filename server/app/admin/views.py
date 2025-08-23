@@ -51,9 +51,16 @@ async def admin_root():
 @router.get("/login", response_class=HTMLResponse)
 async def login_page(request: Request):
     """Admin login page."""
+    error_param = request.query_params.get("error")
+    error_map = {
+        "invalid": "Invalid username or password.",
+        "system": "Login temporarily unavailable. Please try again.",
+        "signup": "Account created. Please sign in."
+    }
     return templates.TemplateResponse("login.html", {
         "request": request,
-        "page_title": "Admin Login"
+        "page_title": "Admin Login",
+        "error": error_map.get(error_param)
     })
 
 @router.post("/login", response_class=RedirectResponse)

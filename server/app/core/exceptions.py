@@ -227,6 +227,10 @@ class ProviderError(ContextMemoryError):
         details = {}
         if provider:
             details["provider"] = provider
+
+        incoming_details = kwargs.pop("details", None)
+        if isinstance(incoming_details, dict):
+            details.update(incoming_details)
         
         code = kwargs.pop("error_code", "PROVIDER_ERROR")
         status = kwargs.pop("status_code", 502)
