@@ -88,6 +88,8 @@ class Settings(BaseSettings):
     JWT_ALGORITHM: str = Field(default="HS256", description="JWT algorithm")
     JWT_EXPIRE_MINUTES: int = Field(default=1440, description="JWT expiration in minutes")
     SECRET_KEY: str = Field(default="dev-secret-key", description="Application secret key")
+    ADMIN_USERNAME: str = Field(default="admin", description="Local admin username for fallback login")
+    ADMIN_PASSWORD: str = Field(default="admin", description="Local admin password for fallback login")
     API_KEY_PREFIX: str = Field(default="ctx_", description="Generated API key prefix")
     API_KEY_LENGTH: int = Field(default=48, description="Generated API key length")
     

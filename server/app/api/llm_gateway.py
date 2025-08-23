@@ -211,7 +211,7 @@ async def chat_completions(
             async with httpx.AsyncClient() as client:
                 or_request = client.build_request(
                     method="POST",
-                    url=f"{settings.OPENROUTER_BASE}/v1/chat/completions",
+                    url=f"{settings.OPENROUTER_API_BASE}/v1/chat/completions",
                     json=request_body,
                     headers=get_proxy_headers(request),
                     timeout=300.0,

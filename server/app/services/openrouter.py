@@ -97,7 +97,7 @@ async def make_openrouter_request(
     """
     async def _make_request() -> httpx.Response:
         """Internal function to make the actual request."""
-        url = f"{settings.OPENROUTER_BASE}{endpoint}"
+        url = f"{settings.OPENROUTER_API_BASE}{endpoint}"
 
         async with httpx.AsyncClient() as client:
             try:
