@@ -13,6 +13,8 @@ import hashlib
 from app.db.session import get_db_dependency
 from app.db.models import APIKey, ModelCatalog, SemanticItem, EpisodicItem, Artifact, UsageStats, User
 from app.services.openrouter import fetch_all_models, OpenRouterError
+from app.core.redis import get_redis_client
+from app.services.cache import CacheService
 from app.core.config import get_settings
 from app.core.security import (
     get_admin_user, authenticate_admin, create_admin_jwt, create_user,
@@ -429,41 +431,118 @@ async def workers_page(request: Request):
     if not admin_user:
         return RedirectResponse(url="/admin/login", status_code=302)
     
-    # Mock worker data - in real implementation, this would query worker status
-    workers = [
-        {"id": "worker-1", "status": "healthy", "last_heartbeat": "2024-01-01 12:00:00", "tasks_processed": 1500},
-        {"id": "worker-2", "status": "healthy", "last_heartbeat": "2024-01-01 12:00:00", "tasks_processed": 1200}
-    ]
-    
-    stats = {
-        "total_workers": len(workers),
-        "healthy_workers": len([w for w in workers if w["status"] == "healthy"]),
-        "total_tasks": sum(w["tasks_processed"] for w in workers),
-        "health_score": 95
-    }
-    
-    # Mock queue data
-    queues = {
-        "total_queued_jobs": 42,
-        "processing_jobs": 8,
-        "failed_jobs": 2,
-        "completed_jobs": 1458,
-        "details": {
-            "embeddings": {"pending": 10, "processing": 2, "completed": 450, "failed_count": 3},
-            "indexing": {"pending": 8, "processing": 1, "completed": 320, "failed_count": 1},
-            "cleanup": {"pending": 5, "processing": 0, "completed": 688, "failed_count": 0}
+    try:
+        # Get Redis client for real queue data
+        redis_client = await get_redis_client()
+        
+        # Query actual Redis for queue information
+        try:
+            # Get queue lengths from Redis
+            embeddings_pending = await redis_client.llen("queue:embeddings:pending") or 0
+            embeddings_processing = await redis_client.llen("queue:embeddings:processing") or 0
+            embeddings_failed = await redis_client.llen("queue:embeddings:failed") or 0
+            
+            indexing_pending = await redis_client.llen("queue:indexing:pending") or 0
+            indexing_processing = await redis_client.llen("queue:indexing:processing") or 0
+            indexing_failed = await redis_client.llen("queue:indexing:failed") or 0
+            
+            cleanup_pending = await redis_client.llen("queue:cleanup:pending") or 0
+            cleanup_processing = await redis_client.llen("queue:cleanup:processing") or 0
+            cleanup_failed = await redis_client.llen("queue:cleanup:failed") or 0
+            
+            # Get Redis info
+            redis_info = await redis_client.info()
+            redis_status = {
+                "connected": True,
+                "used_memory": redis_info.get("used_memory_human", "N/A"),
+                "connected_clients": redis_info.get("connected_clients", 0),
+                "error": None
+            }
+            
+        except Exception as e:
+            logger.exception("redis_connection_error")
+            # Fallback when Redis is unavailable
+            embeddings_pending = embeddings_processing = embeddings_failed = 0
+            indexing_pending = indexing_processing = indexing_failed = 0
+            cleanup_pending = cleanup_processing = cleanup_failed = 0
+            
+            redis_status = {
+                "connected": False,
+                "used_memory": "N/A",
+                "connected_clients": 0,
+                "error": str(e)
+            }
+        
+        # Calculate totals
+        total_queued = embeddings_pending + indexing_pending + cleanup_pending
+        total_processing = embeddings_processing + indexing_processing + cleanup_processing
+        total_failed = embeddings_failed + indexing_failed + cleanup_failed
+        
+        # Get worker count from Redis worker registry (if implemented)
+        try:
+            worker_keys = await redis_client.keys("worker:*:heartbeat")
+            active_workers = len(worker_keys)
+        except:
+            active_workers = 0
+        
+        # Build real queue data
+        queues = {
+            "total_queued_jobs": total_queued,
+            "processing_jobs": total_processing,
+            "failed_jobs": total_failed,
+            "completed_jobs": 0,  # Would need to track this in Redis or DB
+            "details": {
+                "embeddings": {
+                    "pending": embeddings_pending,
+                    "processing": embeddings_processing,
+                    "completed": 0,
+                    "failed_count": embeddings_failed
+                },
+                "indexing": {
+                    "pending": indexing_pending,
+                    "processing": indexing_processing,
+                    "completed": 0,
+                    "failed_count": indexing_failed
+                },
+                "cleanup": {
+                    "pending": cleanup_pending,
+                    "processing": cleanup_processing,
+                    "completed": 0,
+                    "failed_count": cleanup_failed
+                }
+            }
         }
-    }
-    
-    return templates.TemplateResponse("workers.html", {
-        "request": request,
-        "stats": stats,
-        "workers": workers,
-        "queues": queues,
-        "page_title": "Workers"
-    })
+        
+        # Build real worker stats
+        workers = []  # Would need worker registry to populate this
+        stats = {
+            "total_workers": active_workers,
+            "healthy_workers": active_workers,
+            "total_tasks": total_queued + total_processing,
+            "health_score": 100 if redis_status["connected"] else 0
+        }
+        
+        return templates.TemplateResponse("workers.html", {
+            "request": request,
+            "stats": stats,
+            "workers": workers,
+            "queues": queues,
+            "redis": redis_status,
+            "page_title": "Workers"
+        })
+        
+    except Exception as e:
+        logger.exception("workers_page_error")
+        # Return minimal data on error
+        return templates.TemplateResponse("workers.html", {
+            "request": request,
+            "stats": {"total_workers": 0, "healthy_workers": 0, "total_tasks": 0, "health_score": 0},
+            "workers": [],
+            "queues": {"total_queued_jobs": 0, "processing_jobs": 0, "failed_jobs": 0, "completed_jobs": 0, "details": {}},
+            "redis": {"connected": False, "error": str(e)},
+            "page_title": "Workers"
+        })
 
-# Favicon route to prevent 404 errors
 @router.get("/favicon.ico")
 async def favicon():
     """Return 204 No Content for favicon requests."""
