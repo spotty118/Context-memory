@@ -43,7 +43,9 @@ class AuthenticationError(ContextMemoryError):
     """Base class for authentication-related errors."""
     
     def __init__(self, message: str = "Authentication failed", **kwargs):
-        super().__init__(message, error_code="AUTHENTICATION_FAILED", status_code=401, **kwargs)
+        code = kwargs.pop("error_code", "AUTHENTICATION_FAILED")
+        status = kwargs.pop("status_code", 401)
+        super().__init__(message, error_code=code, status_code=status, **kwargs)
 
 
 class InvalidAPIKeyError(AuthenticationError):
@@ -71,7 +73,9 @@ class AuthorizationError(ContextMemoryError):
     """Base class for authorization-related errors."""
     
     def __init__(self, message: str = "Access denied", **kwargs):
-        super().__init__(message, error_code="ACCESS_DENIED", status_code=403, **kwargs)
+        code = kwargs.pop("error_code", "ACCESS_DENIED")
+        status = kwargs.pop("status_code", 403)
+        super().__init__(message, error_code=code, status_code=status, **kwargs)
 
 
 class InsufficientPermissionsError(AuthorizationError):
@@ -87,7 +91,9 @@ class ResourceError(ContextMemoryError):
     """Base class for resource-related errors."""
     
     def __init__(self, message: str, **kwargs):
-        super().__init__(message, error_code="RESOURCE_ERROR", status_code=400, **kwargs)
+        code = kwargs.pop("error_code", "RESOURCE_ERROR")
+        status = kwargs.pop("status_code", 400)
+        super().__init__(message, error_code=code, status_code=status, **kwargs)
 
 
 class TokenBudgetExceededError(ResourceError):
@@ -165,7 +171,9 @@ class ModelError(ContextMemoryError):
     """Base class for model-related errors."""
     
     def __init__(self, message: str, **kwargs):
-        super().__init__(message, error_code="MODEL_ERROR", status_code=400, **kwargs)
+        code = kwargs.pop("error_code", "MODEL_ERROR")
+        status = kwargs.pop("status_code", 400)
+        super().__init__(message, error_code=code, status_code=status, **kwargs)
 
 
 class ModelNotAvailableError(ModelError):
@@ -220,11 +228,13 @@ class ProviderError(ContextMemoryError):
         if provider:
             details["provider"] = provider
         
+        code = kwargs.pop("error_code", "PROVIDER_ERROR")
+        status = kwargs.pop("status_code", 502)
         super().__init__(
             message, 
-            error_code="PROVIDER_ERROR", 
+            error_code=code, 
             details=details,
-            status_code=502,
+            status_code=status,
             **kwargs
         )
 
@@ -260,7 +270,9 @@ class ContextMemoryServiceError(ContextMemoryError):
     """Base class for context memory service errors."""
     
     def __init__(self, message: str, **kwargs):
-        super().__init__(message, error_code="CONTEXT_MEMORY_ERROR", status_code=500, **kwargs)
+        code = kwargs.pop("error_code", "CONTEXT_MEMORY_ERROR")
+        status = kwargs.pop("status_code", 500)
+        super().__init__(message, error_code=code, status_code=status, **kwargs)
 
 
 class ContextNotFoundError(ContextMemoryServiceError):
@@ -337,11 +349,13 @@ class ValidationError(ContextMemoryError):
         if field:
             details["field"] = field
         
+        code = kwargs.pop("error_code", "VALIDATION_ERROR")
+        status = kwargs.pop("status_code", 400)
         super().__init__(
             message, 
-            error_code="VALIDATION_ERROR", 
+            error_code=code, 
             details=details,
-            status_code=400,
+            status_code=status,
             **kwargs
         )
 
@@ -384,7 +398,9 @@ class DatabaseError(ContextMemoryError):
     """Base class for database-related errors."""
     
     def __init__(self, message: str = "Database error", **kwargs):
-        super().__init__(message, error_code="DATABASE_ERROR", status_code=500, **kwargs)
+        code = kwargs.pop("error_code", "DATABASE_ERROR")
+        status = kwargs.pop("status_code", 500)
+        super().__init__(message, error_code=code, status_code=status, **kwargs)
 
 
 class ConnectionError(DatabaseError):
@@ -398,7 +414,9 @@ class RedisError(ContextMemoryError):
     """Base class for Redis-related errors."""
     
     def __init__(self, message: str = "Redis error", **kwargs):
-        super().__init__(message, error_code="REDIS_ERROR", status_code=500, **kwargs)
+        code = kwargs.pop("error_code", "REDIS_ERROR")
+        status = kwargs.pop("status_code", 500)
+        super().__init__(message, error_code=code, status_code=status, **kwargs)
 
 
 class CacheError(RedisError):
@@ -414,7 +432,9 @@ class ConfigurationError(ContextMemoryError):
     """Base class for configuration-related errors."""
     
     def __init__(self, message: str = "Configuration error", **kwargs):
-        super().__init__(message, error_code="CONFIGURATION_ERROR", status_code=500, **kwargs)
+        code = kwargs.pop("error_code", "CONFIGURATION_ERROR")
+        status = kwargs.pop("status_code", 500)
+        super().__init__(message, error_code=code, status_code=status, **kwargs)
 
 
 class MissingConfigurationError(ConfigurationError):

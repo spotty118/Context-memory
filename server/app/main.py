@@ -430,6 +430,10 @@ async def root(request: Request):
     """Root endpoint redirects to admin login."""
     return RedirectResponse(url="/admin/login", status_code=302)
 
+@app.get("/favicon.ico", include_in_schema=False)
+async def favicon_root():
+    return Response(status_code=204)
+
 
 if __name__ == "__main__":
     import uvicorn

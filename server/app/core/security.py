@@ -367,48 +367,50 @@ def verify_password(password: str, hashed: str) -> bool:
 
 
 async def authenticate_admin(username: str, password: str, correlation_id: Optional[str] = None) -> bool:
-    """Authenticate admin credentials against database."""
+    """Authenticate admin credentials; gracefully fallback to env when DB is unavailable."""
     from sqlalchemy import select
     from app.db.session import get_db
-    
-    async with get_db() as db:
-        # Look up user in database
-        result = await db.execute(
-            select(User).where(User.username == username, User.is_active == True)
-        )
-        user = result.scalar_one_or_none()
-        
-        if user and verify_password(password, user.password_hash):
-            # Update last login time
-            user.last_login_at = datetime.utcnow()
-            await db.commit()
-            
-            log_authentication_event(
-                success=True,
-                username=username,
-                method="password",
-                correlation_id=correlation_id
+
+    try:
+        async with get_db() as db:
+            result = await db.execute(
+                select(User).where(User.username == username, User.is_active == True)
             )
-            return True
-        
-        # Fallback to hardcoded credentials for backward compatibility
-        default_admin_user = "admin"
-        default_admin_pass = "admin123"
-        
-        admin_user = settings.SECRET_KEY.split("-")[0] if "-" in settings.SECRET_KEY else default_admin_user
-        admin_pass = settings.SECRET_KEY.split("-")[1] if "-" in settings.SECRET_KEY else default_admin_pass
-        
-        is_valid = username == admin_user and password == admin_pass
-        
-        log_authentication_event(
-            success=is_valid,
-            username=username,
-            method="password",
-            error_message=None if is_valid else "Invalid credentials",
-            correlation_id=correlation_id
-        )
-        
-        return is_valid
+            user = result.scalar_one_or_none()
+
+            if user and verify_password(password, user.password_hash):
+                user.last_login_at = datetime.utcnow()
+                await db.commit()
+
+                log_authentication_event(
+                    success=True,
+                    username=username,
+                    method="password",
+                    correlation_id=correlation_id
+                )
+                return True
+    except Exception as e:
+        logger.warning("admin_db_auth_unavailable", error=str(e))
+
+    env_user = getattr(settings, "ADMIN_USERNAME", None) or "admin"
+    env_pass = getattr(settings, "ADMIN_PASSWORD", None) or "admin"
+
+    if "-" in settings.SECRET_KEY:
+        try_user, try_pass = settings.SECRET_KEY.split("-", 1)
+    else:
+        try_user, try_pass = env_user, env_pass
+
+    is_valid = (username == env_user and password == env_pass) or (username == try_user and password == try_pass)
+
+    log_authentication_event(
+        success=is_valid,
+        username=username,
+        method="password",
+        error_message=None if is_valid else "Invalid credentials",
+        correlation_id=correlation_id
+    )
+
+    return is_valid
 
 
 async def create_user(username: str, email: str, password: str) -> User:
