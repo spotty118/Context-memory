@@ -20,7 +20,7 @@ from app.core.security import (
 )
 
 # Initialize settings
-settings = get_settings()
+app_settings = get_settings()
 
 router = APIRouter()
 logger = structlog.get_logger(__name__)
@@ -74,9 +74,9 @@ async def admin_login(
             response.set_cookie(
                 key="admin_session",
                 value=token,
-                max_age=get_settings().JWT_EXPIRE_MINUTES * 60,
+                max_age=app_settings.JWT_EXPIRE_MINUTES * 60,
                 httponly=True,
-                secure=settings.is_production,
+                secure=app_settings.is_production,
                 samesite="lax"
             )
             
@@ -158,9 +158,9 @@ async def admin_signup(
         response.set_cookie(
             key="admin_session",
             value=token,
-            max_age=get_settings().JWT_EXPIRE_MINUTES * 60,
+            max_age=app_settings.JWT_EXPIRE_MINUTES * 60,
             httponly=True,
-            secure=settings.is_production,
+            secure=app_settings.is_production,
             samesite="lax"
         )
         
