@@ -16,7 +16,7 @@ from app.services.openrouter import fetch_all_models, OpenRouterError
 from app.core.config import get_settings
 from app.core.security import (
     get_admin_user, authenticate_admin, create_admin_jwt, create_user,
-    AdminUser, AdminLoginRequest, AdminLoginResponse
+    verify_admin_jwt, AdminUser, AdminLoginRequest, AdminLoginResponse
 )
 
 # Initialize settings
@@ -34,7 +34,7 @@ async def require_admin_auth(request: Request) -> Optional[AdminUser]:
         token = request.cookies.get("admin_token")
         if not token:
             return None
-        return await get_admin_user(token)
+        return verify_admin_jwt(token)
     except Exception as e:
         logger.exception("auth_check_error")
         return None
