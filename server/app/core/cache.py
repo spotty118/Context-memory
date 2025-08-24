@@ -462,6 +462,14 @@ class CacheManager:
 cache_manager = CacheManager()
 
 
+def get_cache_manager() -> CacheManager:
+    """
+    Compatibility accessor for the global CacheManager instance.
+    Returns the singleton cache_manager.
+    """
+    return cache_manager
+
+
 def cache_result(
     cache_type: str = "default",
     ttl_override: Optional[int] = None,
@@ -541,6 +549,7 @@ __all__ = [
     "CacheKeyGenerator", 
     "CacheInvalidator",
     "cache_manager",
+    "get_cache_manager",
     "cache_result",
     "CacheConfig",
     "CacheLayer"
