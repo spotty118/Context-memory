@@ -1,0 +1,47 @@
+# Docker optimization commands
+
+.PHONY: build-fast build-minimal build-cached clean-docker
+
+# Fast build with optimized Dockerfile
+build-fast:
+	@echo "Building with optimized Dockerfile..."
+	docker build -f Dockerfile.optimized -t context-memory-gateway:fast .
+
+# Minimal build with reduced dependencies  
+build-minimal:
+	@echo "Building with minimal dependencies..."
+	docker build -f Dockerfile.minimal -t context-memory-gateway:minimal .
+
+# Build with cache mount (Docker BuildKit)
+build-cached:
+	@echo "Building with BuildKit cache..."
+	DOCKER_BUILDKIT=1 docker build --target production -t context-memory-gateway:cached .
+
+# Multi-stage build with cache
+build-multistage:
+	@echo "Building multi-stage with cache..."
+	docker build --target production -t context-memory-gateway:production .
+
+# Clean Docker cache to free space
+clean-docker:
+	@echo "Cleaning Docker cache..."
+	docker system prune -f
+	docker builder prune -f
+
+# Show Docker cache usage
+docker-info:
+	@echo "Docker cache usage:"
+	docker system df
+
+# Time the build process
+time-build:
+	@echo "Timing optimized build..."
+	time docker build -f Dockerfile.optimized -t context-memory-gateway:timed .
+
+# Compare build times
+compare-builds:
+	@echo "Original build:"
+	time docker build -t context-memory-gateway:original . > build-original.log 2>&1 || true
+	@echo "Optimized build:"  
+	time docker build -f Dockerfile.optimized -t context-memory-gateway:optimized . > build-optimized.log 2>&1 || true
+	@echo "Build comparison complete. Check build-*.log files"

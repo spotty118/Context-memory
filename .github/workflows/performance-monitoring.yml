@@ -1,0 +1,313 @@
+name: Performance Monitoring
+
+on:
+  push:
+    branches: [ main ]
+  pull_request:
+    branches: [ main ]
+  schedule:
+    # Run performance tests nightly
+    - cron: '0 1 * * *'
+  workflow_dispatch:
+
+env:
+  PYTHON_VERSION: '3.11'
+
+jobs:
+  performance-tests:
+    name: Performance Benchmarks
+    runs-on: ubuntu-latest
+    
+    services:
+      postgres:
+        image: pgvector/pgvector:pg15
+        env:
+          POSTGRES_PASSWORD: test_password
+          POSTGRES_USER: test_user
+          POSTGRES_DB: test_db
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+        ports:
+          - 5432:5432
+      
+      redis:
+        image: redis:7-alpine
+        options: >-
+          --health-cmd "redis-cli ping"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+        ports:
+          - 6379:6379
+
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+
+    - name: Set up Python
+      uses: actions/setup-python@v4
+      with:
+        python-version: ${{ env.PYTHON_VERSION }}
+        cache: 'pip'
+
+    - name: Install dependencies
+      run: |
+        python -m pip install --upgrade pip
+        pip install -r requirements.txt -r requirements-dev.txt
+
+    - name: Set up test environment
+      env:
+        DATABASE_URL: postgresql://test_user:test_password@localhost:5432/test_db
+        REDIS_URL: redis://localhost:6379/0
+        ENVIRONMENT: test
+      run: |
+        cd server
+        alembic upgrade head
+
+    # Run performance benchmarks using the existing benchmark system
+    - name: Run performance benchmarks
+      env:
+        DATABASE_URL: postgresql://test_user:test_password@localhost:5432/test_db
+        REDIS_URL: redis://localhost:6379/0
+        ENVIRONMENT: test
+        OPENROUTER_API_KEY: ${{ secrets.OPENROUTER_API_KEY }}
+      run: |
+        cd server
+        # Start the server in background
+        python -m uvicorn app.main:app --host 0.0.0.0 --port 8000 &
+        SERVER_PID=$!
+        
+        # Wait for server to start
+        sleep 10
+        
+        # Run performance benchmarks
+        python scripts/benchmark_cli.py \
+          --base-url http://localhost:8000 \
+          --endpoints health llm_gateway recall \
+          --concurrent-requests 10 \
+          --total-requests 100 \
+          --output benchmark-results.json
+        
+        # Stop the server
+        kill $SERVER_PID
+        wait $SERVER_PID 2>/dev/null || true
+
+    # Generate performance report
+    - name: Generate performance report
+      if: always()
+      run: |
+        cd server
+        if [ -f benchmark-results.json ]; then
+          python scripts/performance_report.py benchmark-results.json -o performance-report.html
+          
+          # Create summary for GitHub
+          python -c "
+import json
+try:
+    with open('benchmark-results.json') as f:
+        data = json.load(f)
+    if isinstance(data, list) and len(data) > 0:
+        data = data[-1]  # Get latest results
+    
+    summary = data.get('summary', {})
+    print('## Performance Summary')
+    print(f'- Total Requests: {summary.get(\"total_requests\", \"N/A\")}')
+    print(f'- Success Rate: {summary.get(\"overall_success_rate\", \"N/A\"):.1f}%')
+    print(f'- Average Response Time: {summary.get(\"avg_response_time_ms\", \"N/A\"):.1f}ms')
+    print(f'- Total Throughput: {summary.get(\"total_throughput_rps\", \"N/A\"):.1f} req/s')
+    print()
+    
+    # Check for performance regressions
+    metrics = data.get('metrics', {})
+    slow_endpoints = []
+    for endpoint, data in metrics.items():
+        if data.get('avg_response_time_ms', 0) > 500:
+            slow_endpoints.append(f'{endpoint} ({data.get(\"avg_response_time_ms\"):.1f}ms)')
+    
+    if slow_endpoints:
+        print('⚠️ **Slow Endpoints Detected:**')
+        for endpoint in slow_endpoints:
+            print(f'- {endpoint}')
+    else:
+        print('✅ All endpoints performing within acceptable limits')
+        
+except Exception as e:
+    print('❌ Error parsing benchmark results:', str(e))
+          " > performance-summary.md
+          
+          cat performance-summary.md
+        else
+          echo '❌ No benchmark results generated' > performance-summary.md
+        fi
+
+    # Upload performance results
+    - name: Upload performance results
+      uses: actions/upload-artifact@v3
+      if: always()
+      with:
+        name: performance-results
+        path: |
+          server/benchmark-results.json
+          server/performance-report.html
+          server/performance-summary.md
+
+    # Comment performance summary on PR
+    - name: Comment performance results on PR
+      if: github.event_name == 'pull_request' && always()
+      uses: actions/github-script@v6
+      with:
+        script: |
+          const fs = require('fs');
+          const path = './server/performance-summary.md';
+          
+          if (fs.existsSync(path)) {
+            const summary = fs.readFileSync(path, 'utf8');
+            
+            github.rest.issues.createComment({
+              issue_number: context.issue.number,
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              body: `# 🚀 Performance Test Results\n\n${summary}\n\n*Performance tests run on commit ${context.sha.substring(0, 7)}*`
+            });
+          }
+
+    # Performance regression detection
+    - name: Check for performance regressions
+      if: always()
+      run: |
+        cd server
+        if [ -f benchmark-results.json ]; then
+          python -c "
+import json
+import sys
+
+try:
+    with open('benchmark-results.json') as f:
+        data = json.load(f)
+    if isinstance(data, list) and len(data) > 0:
+        data = data[-1]
+    
+    summary = data.get('summary', {})
+    avg_response_time = summary.get('avg_response_time_ms', 0)
+    success_rate = summary.get('overall_success_rate', 100)
+    throughput = summary.get('total_throughput_rps', 0)
+    
+    # Performance thresholds
+    MAX_AVG_RESPONSE_TIME = 1000  # 1 second
+    MIN_SUCCESS_RATE = 95         # 95%
+    MIN_THROUGHPUT = 10           # 10 req/s
+    
+    failures = []
+    
+    if avg_response_time > MAX_AVG_RESPONSE_TIME:
+        failures.append(f'Average response time too slow: {avg_response_time:.1f}ms (max: {MAX_AVG_RESPONSE_TIME}ms)')
+    
+    if success_rate < MIN_SUCCESS_RATE:
+        failures.append(f'Success rate too low: {success_rate:.1f}% (min: {MIN_SUCCESS_RATE}%)')
+    
+    if throughput < MIN_THROUGHPUT:
+        failures.append(f'Throughput too low: {throughput:.1f} req/s (min: {MIN_THROUGHPUT} req/s)')
+    
+    if failures:
+        print('❌ Performance regression detected:')
+        for failure in failures:
+            print(f'  - {failure}')
+        
+        # For now, just warn - don't fail the build
+        # sys.exit(1)
+    else:
+        print('✅ Performance within acceptable limits')
+        
+except Exception as e:
+    print('⚠️ Could not analyze performance results:', str(e))
+          "
+        else
+          echo '⚠️ No benchmark results to analyze'
+        fi
+
+  load-testing:
+    name: Load Testing (Optional)
+    runs-on: ubuntu-latest
+    if: github.event_name == 'workflow_dispatch' || github.event_name == 'schedule'
+    
+    services:
+      postgres:
+        image: pgvector/pgvector:pg15
+        env:
+          POSTGRES_PASSWORD: test_password
+          POSTGRES_USER: test_user
+          POSTGRES_DB: test_db
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+        ports:
+          - 5432:5432
+      
+      redis:
+        image: redis:7-alpine
+        options: >-
+          --health-cmd "redis-cli ping"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+        ports:
+          - 6379:6379
+
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+
+    - name: Set up Python
+      uses: actions/setup-python@v4
+      with:
+        python-version: ${{ env.PYTHON_VERSION }}
+        cache: 'pip'
+
+    - name: Install dependencies
+      run: |
+        python -m pip install --upgrade pip
+        pip install -r requirements.txt -r requirements-dev.txt
+
+    - name: Set up test environment
+      env:
+        DATABASE_URL: postgresql://test_user:test_password@localhost:5432/test_db
+        REDIS_URL: redis://localhost:6379/0
+        ENVIRONMENT: test
+      run: |
+        cd server
+        alembic upgrade head
+
+    - name: Run load tests with Locust
+      env:
+        DATABASE_URL: postgresql://test_user:test_password@localhost:5432/test_db
+        REDIS_URL: redis://localhost:6379/0
+        ENVIRONMENT: test
+        OPENROUTER_API_KEY: ${{ secrets.OPENROUTER_API_KEY }}
+      run: |
+        cd server
+        
+        # Start the server in background
+        python -m uvicorn app.main:app --host 0.0.0.0 --port 8000 &
+        SERVER_PID=$!
+        
+        # Wait for server to start
+        sleep 15
+        
+        # Run load tests
+        pytest tests/load/ -v --tb=short --maxfail=1
+        
+        # Stop the server
+        kill $SERVER_PID
+        wait $SERVER_PID 2>/dev/null || true
+
+    - name: Upload load test results
+      uses: actions/upload-artifact@v3
+      if: always()
+      with:
+        name: load-test-results
+        path: server/load-test-*.html

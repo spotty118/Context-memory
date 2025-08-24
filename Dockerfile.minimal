@@ -1,0 +1,31 @@
+# Ultra-fast minimal build for development
+FROM python:3.11-slim
+
+# Single RUN layer for system deps
+RUN apt-get update && apt-get install -y --no-install-recommends curl && rm -rf /var/lib/apt/lists/*
+
+# Non-root user
+RUN useradd -m -u 1000 appuser
+
+WORKDIR /app
+
+# Install minimal Python deps
+COPY requirements-minimal.txt .
+RUN pip install --no-cache-dir -r requirements-minimal.txt
+
+# Copy app
+COPY server/ ./server/
+RUN chown -R appuser:appuser /app
+
+USER appuser
+
+# Environment
+ENV PYTHONPATH=/app/server PYTHONUNBUFFERED=1
+
+# Quick health check
+HEALTHCHECK --interval=30s --timeout=5s --retries=2 CMD curl -f http://localhost:8000/health || exit 1
+
+EXPOSE 8000
+
+# Single worker for dev
+CMD ["python", "-m", "uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000", "--reload"]

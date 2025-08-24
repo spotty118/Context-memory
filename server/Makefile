@@ -118,8 +118,31 @@ setup: install migrate
 	@echo "Run 'make dev' to start the development server"
 
 # CI/CD targets
-ci-test: install test-coverage lint
+ci-install:
+	pip install -r ../requirements.txt -r ../requirements-dev.txt
+
+ci-lint:
+	@echo "Running code quality checks..."
+	black --check --diff app/
+	isort --check-only --diff app/
+	ruff check app/ --format=github
+	mypy app/ --ignore-missing-imports
+
+ci-security:
+	@echo "Running security scans..."
+	bandit -r app/ -f json -o bandit-report.json
+	safety check --json --output safety-report.json || true
+
+ci-test: ci-install ci-lint test-coverage
 	@echo "CI tests complete"
+
+ci-performance:
+	@echo "Running performance tests..."
+	python scripts/benchmark_cli.py --base-url http://localhost:8000 --endpoints health --concurrent-requests 5 --total-requests 50
+	python scripts/performance_report.py benchmark-results.json
+
+ci-full: ci-install ci-lint ci-security test-coverage ci-performance
+	@echo "Full CI pipeline complete"
 
 # Health check
 health:

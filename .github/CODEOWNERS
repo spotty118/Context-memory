@@ -1,0 +1,31 @@
+# Code ownership for Context Memory Gateway
+# This file defines code owners who will be automatically requested for review
+# when pull requests are opened that modify files in their domain
+
+# Global ownership - all files
+* @justinadams
+
+# Core application code
+/server/app/ @justinadams
+/server/tests/ @justinadams
+
+# Infrastructure and deployment
+/infra/ @justinadams
+/terraform/ @justinadams
+/.github/ @justinadams
+/docker-compose*.yml @justinadams
+/Dockerfile @justinadams
+
+# Documentation
+/docs/ @justinadams
+/README.md @justinadams
+
+# Configuration files
+/.env* @justinadams
+/pyproject.toml @justinadams
+/requirements*.txt @justinadams
+
+# Security-sensitive files (require additional review)
+/server/app/core/security.py @justinadams
+/server/app/core/config.py @justinadams
+/server/app/core/auth.py @justinadams

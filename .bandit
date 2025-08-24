@@ -1,0 +1,35 @@
+# Bandit security linting configuration
+# https://bandit.readthedocs.io/en/latest/config.html
+
+[bandit]
+# Paths to exclude from scanning
+exclude_dirs = [
+    "/tests",
+    "/venv", 
+    "/.venv",
+    "/node_modules",
+    "/.git"
+]
+
+# Test IDs to skip (comma-separated)
+# B101: Test for use of assert
+# B601: Test for shell injection within Paramiko
+skips = ["B101"]
+
+# Confidence levels: LOW, MEDIUM, HIGH
+confidence = "MEDIUM"
+
+# Severity levels: LOW, MEDIUM, HIGH  
+severity = "MEDIUM"
+
+# Output format: txt, json, csv, xml, yaml
+format = "json"
+
+# Include only specific test IDs (if needed)
+# tests = ["B201", "B301"]
+
+# Additional paths to scan
+paths = ["server/app"]
+
+# Recursively scan subdirectories
+recursive = true

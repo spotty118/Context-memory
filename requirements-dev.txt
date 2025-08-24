@@ -13,6 +13,7 @@ pytest-html>=3.2.0  # HTML test reports
 # Code quality and formatting
 black>=23.12.0
 isort>=5.13.0
+ruff>=0.1.8  # Fast Python linter and formatter
 flake8>=7.0.0
 flake8-docstrings>=1.7.0
 flake8-bugbear>=23.12.0

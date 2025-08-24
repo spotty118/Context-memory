@@ -1,0 +1,30 @@
+# Minimal requirements for faster Docker builds
+# Core web framework
+fastapi==0.104.1
+uvicorn[standard]==0.24.0
+
+# Essential dependencies
+pydantic==2.5.0
+pydantic-settings==2.1.0
+jinja2==3.1.2
+python-multipart==0.0.6
+
+# Database essentials
+supabase==2.7.4
+redis==5.0.1
+SQLAlchemy==2.0.23
+asyncpg==0.29.0
+
+# HTTP client
+httpx[http2]==0.25.2
+
+# Logging
+structlog==23.2.0
+
+# System monitoring
+psutil==5.9.6
+
+# Security
+bcrypt==4.1.2
+python-jose[cryptography]==3.3.0
+passlib[bcrypt]==1.7.4
