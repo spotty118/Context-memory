@@ -8,7 +8,7 @@ from pydantic import BaseModel
 import structlog
 
 from app.core.supabase import get_supabase_admin, Tables
-from app.core.auth import get_current_api_key
+from app.core.security import get_current_api_key
 
 logger = structlog.get_logger()
 router = APIRouter(prefix="/v1/contexts", tags=["contexts"])
