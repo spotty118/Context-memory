@@ -1,0 +1,91 @@
+version: '3.8'
+
+services:
+  # PostgreSQL Database with pgvector extension
+  postgres:
+    image: pgvector/pgvector:pg15
+    container_name: cmg-postgres-test
+    environment:
+      POSTGRES_DB: context_memory_gateway
+      POSTGRES_USER: cmg_user
+      POSTGRES_PASSWORD: cmg_password
+      POSTGRES_INITDB_ARGS: "--encoding=UTF-8"
+    ports:
+      - "5433:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+      - ./infra/sql/init.sql:/docker-entrypoint-initdb.d/init.sql:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U cmg_user -d context_memory_gateway"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 60s
+    restart: unless-stopped
+    networks:
+      - cmg-network
+
+  # Redis for caching
+  redis:
+    image: redis:7-alpine
+    container_name: cmg-redis-test
+    ports:
+      - "6380:6379"
+    volumes:
+      - redis_data:/data
+    command: redis-server --appendonly yes
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+    restart: unless-stopped
+    networks:
+      - cmg-network
+
+  # Main Application
+  app:
+    build:
+      context: .
+      dockerfile: Dockerfile
+      target: production
+    container_name: cmg-app-test
+    ports:
+      - "8001:8000"
+    environment:
+      PYTHONPATH: /app/server
+      DATABASE_URL: postgresql://cmg_user:cmg_password@postgres:5432/context_memory_gateway
+      REDIS_URL: redis://redis:6379/0
+      ENVIRONMENT: development
+      DEBUG: "true"
+      LOG_LEVEL: DEBUG
+      SECRET_KEY: test-secret-key
+      JWT_SECRET_KEY: test-jwt-secret-key
+    volumes:
+      - ./logs:/app/logs
+      - ./data:/app/data
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
+      interval: 60s
+      timeout: 15s
+      retries: 3
+      start_period: 120s
+    restart: unless-stopped
+    networks:
+      - cmg-network
+
+volumes:
+  postgres_data:
+    driver: local
+  redis_data:
+    driver: local
+
+networks:
+  cmg-network:
+    driver: bridge
+    name: context-memory-test

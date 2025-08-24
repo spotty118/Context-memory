@@ -41,6 +41,7 @@ class Settings(BaseSettings):
     
     # Fix CORS_ORIGINS to handle comma-separated strings from .env
     CORS_ORIGINS: Union[str, List[str]] = Field(default="", description="Allowed CORS origins")
+    ALLOWED_HOSTS: Union[str, List[str]] = Field(default="*", description="Allowed hosts for TrustedHostMiddleware")
 
     
     # Redis Configuration

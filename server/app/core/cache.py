@@ -14,7 +14,7 @@ import redis.asyncio as redis
 from functools import wraps
 
 from app.core.config import settings
-
+from app.core.circuit_breaker import get_circuit_breaker, CircuitBreakerConfig
 
 logger = structlog.get_logger(__name__)
 
@@ -134,14 +134,25 @@ class CacheManager:
         }
     
     async def get_redis_client(self) -> redis.Redis:
-        """Get Redis client with connection pooling."""
+        """Get Redis client with connection pooling and circuit breaker protection."""
         if self._redis_client is None:
-            self._redis_client = redis.from_url(
-                settings.REDIS_URL, 
-                decode_responses=True,
-                max_connections=20,
-                retry_on_timeout=True
-            )
+            circuit_breaker = get_circuit_breaker("redis", CircuitBreakerConfig(
+                failure_threshold=5,
+                recovery_timeout=30.0,
+                success_threshold=2,
+                timeout=10.0,
+                expected_exception=Exception
+            ))
+            
+            async def _create_client():
+                return redis.from_url(
+                    settings.REDIS_URL, 
+                    decode_responses=True,
+                    max_connections=20,
+                    retry_on_timeout=True
+                )
+            
+            self._redis_client = await circuit_breaker.call(_create_client)
         return self._redis_client
     
     async def get(

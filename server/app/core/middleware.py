@@ -215,15 +215,20 @@ class CircuitBreakerMiddleware(BaseHTTPMiddleware):
             return await call_next(request)
         except Exception as e:
             # Check if this is a circuit breaker exception
-            if "circuit breaker" in str(e).lower() or "CircuitBreakerError" in str(type(e).__name__):
+            if "CircuitBreakerError" in str(type(e).__name__) or "circuit breaker" in str(e).lower():
+                # Extract retry_after from CircuitBreakerError if available
+                retry_after = getattr(e, 'retry_after', 60)
+                service_name = getattr(e, 'service_name', 'external_service')
+                
                 builder = APIResponseBuilder(request)
                 return builder.error(
-                    code="INTEGRATION_ERROR",
-                    message="External service temporarily unavailable",
+                    code="SERVICE_UNAVAILABLE",
+                    message="External service temporarily unavailable due to circuit breaker",
                     details={
-                        "service": "openrouter",
+                        "service": service_name,
                         "reason": "circuit_breaker_open",
-                        "retry_after": 60
+                        "retry_after_seconds": retry_after,
+                        "description": "The service is temporarily unavailable. Please try again later."
                     },
                     status_code=503
                 )

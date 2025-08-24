@@ -1,0 +1,417 @@
+name: CI Pipeline
+# Comprehensive CI pipeline with security scanning, testing, and quality gates
+
+on:
+  push:
+    branches: [ main, develop ]
+  pull_request:
+    branches: [ main, develop ]
+  workflow_dispatch:
+
+env:
+  REGISTRY: ghcr.io
+  IMAGE_NAME: context-memory-gateway
+  PYTHON_VERSION: '3.11'
+
+jobs:
+  # Job 1: Code Quality & Security Scanning
+  code-quality:
+    name: Code Quality & Security
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      security-events: write
+    
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+      with:
+        fetch-depth: 0  # Fetch full history for better analysis
+    
+    - name: Set up Python
+      uses: actions/setup-python@v4
+      with:
+        python-version: ${{ env.PYTHON_VERSION }}
+        cache: 'pip'
+    
+    - name: Install dependencies
+      run: |
+        python -m pip install --upgrade pip
+        pip install -r requirements.txt -r requirements-dev.txt
+    
+    - name: Code formatting check (Black)
+      run: |
+        black --check --diff server/
+    
+    - name: Import sorting check (isort)
+      run: |
+        isort --check-only --diff server/
+    
+    - name: Linting (Ruff)
+      run: |
+        ruff check server/ --format=github
+    
+    - name: Type checking (MyPy)
+      run: |
+        mypy server/app --ignore-missing-imports
+    
+    - name: Security linting (Bandit)
+      run: |
+        bandit -r server/app -f json -o bandit-report.json
+      continue-on-error: true
+    
+    - name: Upload Bandit report
+      uses: actions/upload-artifact@v3
+      with:
+        name: bandit-report
+        path: bandit-report.json
+    
+    - name: Dependency vulnerability scan (Safety)
+      run: |
+        safety check --json --output safety-report.json
+      continue-on-error: true
+    
+    - name: Upload Safety report  
+      uses: actions/upload-artifact@v3
+      with:
+        name: safety-report
+        path: safety-report.json
+
+  # Job 2: Unit & Integration Tests
+  test:
+    name: Test Suite
+    runs-on: ubuntu-latest
+    needs: code-quality
+    
+    services:
+      postgres:
+        image: pgvector/pgvector:pg15
+        env:
+          POSTGRES_PASSWORD: test_password
+          POSTGRES_USER: test_user
+          POSTGRES_DB: test_db
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+        ports:
+          - 5432:5432
+      
+      redis:
+        image: redis:7-alpine
+        options: >-
+          --health-cmd "redis-cli ping"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+        ports:
+          - 6379:6379
+    
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+    
+    - name: Set up Python
+      uses: actions/setup-python@v4
+      with:
+        python-version: ${{ env.PYTHON_VERSION }}
+        cache: 'pip'
+    
+    - name: Install dependencies
+      run: |
+        python -m pip install --upgrade pip
+        pip install -r requirements.txt -r requirements-dev.txt
+    
+    - name: Set up test environment
+      env:
+        DATABASE_URL: postgresql://test_user:test_password@localhost:5432/test_db
+        REDIS_URL: redis://localhost:6379/0
+        ENVIRONMENT: test
+      run: |
+        cd server
+        alembic upgrade head
+    
+    - name: Run unit tests with coverage
+      env:
+        DATABASE_URL: postgresql://test_user:test_password@localhost:5432/test_db
+        REDIS_URL: redis://localhost:6379/0
+        ENVIRONMENT: test
+      run: |
+        cd server
+        pytest tests/unit/ -v --cov=app --cov-report=xml --cov-report=html
+    
+    - name: Run integration tests
+      env:
+        DATABASE_URL: postgresql://test_user:test_password@localhost:5432/test_db
+        REDIS_URL: redis://localhost:6379/0
+        ENVIRONMENT: test
+      run: |
+        cd server
+        pytest tests/integration/ -v
+    
+    - name: Upload coverage reports
+      uses: codecov/codecov-action@v3
+      with:
+        file: ./server/coverage.xml
+        flags: unittests
+        name: codecov-umbrella
+    
+    - name: Coverage comment
+      uses: py-cov-action/python-coverage-comment-action@v3
+      with:
+        GITHUB_TOKEN: ${{ github.token }}
+        MINIMUM_GREEN: 90
+        MINIMUM_ORANGE: 80
+
+  # Job 3: Load & Performance Tests
+  performance-tests:
+    name: Performance Tests
+    runs-on: ubuntu-latest
+    needs: test
+    if: github.event_name == 'pull_request' || github.ref == 'refs/heads/main'
+    
+    services:
+      postgres:
+        image: pgvector/pgvector:pg15
+        env:
+          POSTGRES_PASSWORD: test_password
+          POSTGRES_USER: test_user
+          POSTGRES_DB: test_db
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+        ports:
+          - 5432:5432
+      
+      redis:
+        image: redis:7-alpine
+        options: >-
+          --health-cmd "redis-cli ping"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+        ports:
+          - 6379:6379
+    
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+    
+    - name: Set up Python
+      uses: actions/setup-python@v4
+      with:
+        python-version: ${{ env.PYTHON_VERSION }}
+        cache: 'pip'
+    
+    - name: Install dependencies
+      run: |
+        python -m pip install --upgrade pip
+        pip install -r requirements.txt -r requirements-dev.txt
+    
+    - name: Start application
+      env:
+        DATABASE_URL: postgresql://test_user:test_password@localhost:5432/test_db
+        REDIS_URL: redis://localhost:6379/0
+        ENVIRONMENT: test
+      run: |
+        cd server
+        alembic upgrade head
+        python -m uvicorn app.main:app --host 0.0.0.0 --port 8000 &
+        sleep 10
+    
+    - name: Run load tests
+      env:
+        DATABASE_URL: postgresql://test_user:test_password@localhost:5432/test_db
+        REDIS_URL: redis://localhost:6379/0
+        ENVIRONMENT: test
+      run: |
+        cd server
+        pytest tests/load/ -v --tb=short
+    
+    - name: Generate performance report
+      run: |
+        cd server
+        python scripts/performance_report.py > performance-report.txt
+    
+    - name: Upload performance report
+      uses: actions/upload-artifact@v3
+      with:
+        name: performance-report
+        path: server/performance-report.txt
+
+  # Job 4: Container Build & Security Scan  
+  container-build:
+    name: Container Build & Scan
+    runs-on: ubuntu-latest
+    needs: [code-quality, test]
+    permissions:
+      contents: read
+      packages: write
+      security-events: write
+    
+    outputs:
+      image-digest: ${{ steps.build.outputs.digest }}
+      image-url: ${{ steps.build.outputs.imageurl }}
+    
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+    
+    - name: Set up Docker Buildx
+      uses: docker/setup-buildx-action@v3
+    
+    - name: Log in to Container Registry
+      uses: docker/login-action@v3
+      with:
+        registry: ${{ env.REGISTRY }}
+        username: ${{ github.actor }}
+        password: ${{ secrets.GITHUB_TOKEN }}
+    
+    - name: Extract metadata
+      id: meta
+      uses: docker/metadata-action@v5
+      with:
+        images: ${{ env.REGISTRY }}/${{ github.repository_owner }}/${{ env.IMAGE_NAME }}
+        tags: |
+          type=ref,event=branch
+          type=ref,event=pr
+          type=sha,prefix={{branch}}-
+          type=raw,value=latest,enable={{is_default_branch}}
+    
+    - name: Build and push Docker image
+      id: build
+      uses: docker/build-push-action@v5
+      with:
+        context: .
+        push: true
+        tags: ${{ steps.meta.outputs.tags }}
+        labels: ${{ steps.meta.outputs.labels }}
+        platforms: linux/amd64,linux/arm64
+        cache-from: type=gha
+        cache-to: type=gha,mode=max
+        build-args: |
+          BUILD_DATE=${{ fromJSON(steps.meta.outputs.json).labels['org.opencontainers.image.created'] }}
+          VERSION=${{ fromJSON(steps.meta.outputs.json).labels['org.opencontainers.image.version'] }}
+          VCS_REF=${{ github.sha }}
+    
+    - name: Run Trivy vulnerability scanner
+      uses: aquasecurity/trivy-action@master
+      with:
+        image-ref: ${{ env.REGISTRY }}/${{ github.repository_owner }}/${{ env.IMAGE_NAME }}:${{ github.sha }}
+        format: 'sarif'
+        output: 'trivy-results.sarif'
+    
+    - name: Upload Trivy scan results
+      uses: github/codeql-action/upload-sarif@v2
+      with:
+        sarif_file: 'trivy-results.sarif'
+    
+    - name: Generate SBOM
+      uses: anchore/sbom-action@v0
+      with:
+        image: ${{ env.REGISTRY }}/${{ github.repository_owner }}/${{ env.IMAGE_NAME }}:${{ github.sha }}
+        output-file: sbom.spdx.json
+        format: spdx-json
+    
+    - name: Upload SBOM
+      uses: actions/upload-artifact@v3
+      with:
+        name: sbom
+        path: sbom.spdx.json
+
+  # Job 5: Security Gate
+  security-gate:
+    name: Security Gate
+    runs-on: ubuntu-latest
+    needs: [code-quality, container-build]
+    permissions:
+      security-events: read
+    
+    steps:
+    - name: Download security reports
+      uses: actions/download-artifact@v3
+      with:
+        path: security-reports
+    
+    - name: Evaluate security posture
+      run: |
+        echo "Evaluating security scan results..."
+        
+        # Check for critical vulnerabilities in container scan
+        if [ -f "security-reports/trivy-results.sarif" ]; then
+          critical_count=$(jq '[.runs[].results[] | select(.level == "error")] | length' security-reports/trivy-results.sarif)
+          if [ "$critical_count" -gt 0 ]; then
+            echo "❌ Critical vulnerabilities found: $critical_count"
+            echo "SECURITY_STATUS=FAIL" >> $GITHUB_ENV
+          else
+            echo "✅ No critical vulnerabilities found"
+            echo "SECURITY_STATUS=PASS" >> $GITHUB_ENV
+          fi
+        fi
+    
+    - name: Security gate decision
+      run: |
+        if [ "$SECURITY_STATUS" = "FAIL" ]; then
+          echo "❌ Security gate failed - blocking deployment"
+          exit 1
+        else
+          echo "✅ Security gate passed - deployment approved"
+        fi
+
+  # Job 6: Quality Gate Summary
+  quality-gate:
+    name: Quality Gate
+    runs-on: ubuntu-latest
+    needs: [code-quality, test, performance-tests, security-gate]
+    if: always()
+    
+    steps:
+    - name: Evaluate quality gates
+      run: |
+        echo "## Quality Gate Results" >> $GITHUB_STEP_SUMMARY
+        echo "| Check | Status |" >> $GITHUB_STEP_SUMMARY
+        echo "|-------|--------|" >> $GITHUB_STEP_SUMMARY
+        
+        # Code quality
+        if [ "${{ needs.code-quality.result }}" = "success" ]; then
+          echo "| Code Quality | ✅ Pass |" >> $GITHUB_STEP_SUMMARY
+        else
+          echo "| Code Quality | ❌ Fail |" >> $GITHUB_STEP_SUMMARY
+        fi
+        
+        # Tests
+        if [ "${{ needs.test.result }}" = "success" ]; then
+          echo "| Unit Tests | ✅ Pass |" >> $GITHUB_STEP_SUMMARY
+        else
+          echo "| Unit Tests | ❌ Fail |" >> $GITHUB_STEP_SUMMARY
+        fi
+        
+        # Performance
+        if [ "${{ needs.performance-tests.result }}" = "success" ]; then
+          echo "| Performance Tests | ✅ Pass |" >> $GITHUB_STEP_SUMMARY
+        else
+          echo "| Performance Tests | ❌ Fail |" >> $GITHUB_STEP_SUMMARY
+        fi
+        
+        # Security
+        if [ "${{ needs.security-gate.result }}" = "success" ]; then
+          echo "| Security Gate | ✅ Pass |" >> $GITHUB_STEP_SUMMARY
+        else
+          echo "| Security Gate | ❌ Fail |" >> $GITHUB_STEP_SUMMARY
+        fi
+    
+    - name: Overall gate decision
+      run: |
+        if [ "${{ needs.code-quality.result }}" = "success" ] && 
+           [ "${{ needs.test.result }}" = "success" ] && 
+           [ "${{ needs.security-gate.result }}" = "success" ]; then
+          echo "🎉 All quality gates passed! Ready for deployment." >> $GITHUB_STEP_SUMMARY
+          echo "OVERALL_STATUS=PASS" >> $GITHUB_ENV
+        else
+          echo "❌ One or more quality gates failed. Deployment blocked." >> $GITHUB_STEP_SUMMARY
+          echo "OVERALL_STATUS=FAIL" >> $GITHUB_ENV
+          exit 1
+        fi

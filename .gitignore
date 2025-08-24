@@ -150,3 +150,5 @@ docker-compose.override.yml
 # Temporary files
 tmp/
 temp/
+remote_key
+remote_key.pub
