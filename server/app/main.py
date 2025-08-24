@@ -30,6 +30,7 @@ from app.api.v2 import enhanced_context
 from app.api.supabase_api_keys import router as supabase_api_keys_router
 # Legacy admin interface - keeping for compatibility
 from app.admin.views import router as admin_router
+from app.db.session import init_db
 from app.core.exceptions import ContextMemoryError
 from app.core.audit import log_security_event, SecurityEventType, SecurityRisk
 from app.core.versioning import (
