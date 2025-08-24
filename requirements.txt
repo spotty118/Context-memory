@@ -18,6 +18,7 @@ postgrest>=0.14,<0.17
 # Database and ORM (Keep minimal for compatibility)
 SQLAlchemy==2.0.23
 greenlet>=1.1.0
+pgvector==0.2.4
 
 # Cache and Queue (Keep Redis for now)
 redis==5.0.1
