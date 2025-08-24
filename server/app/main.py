@@ -11,6 +11,8 @@ import time
 from fastapi import FastAPI, Request, Response, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.middleware.trustedhost import TrustedHostMiddleware
+from starlette.middleware.sessions import SessionMiddleware
+from starlette.middleware.csrf import CSRFMiddleware
 from fastapi.responses import JSONResponse, HTMLResponse, RedirectResponse
 from fastapi.staticfiles import StaticFiles
 import structlog
@@ -30,6 +32,11 @@ from app.core.audit import log_security_event, SecurityEventType, SecurityRisk
 from app.core.versioning import (
     create_version_middleware, create_version_endpoints, APIVersion,
     version_registry, create_versioned_router
+)
+from app.core.rate_limiting import rate_limit_middleware
+from app.core.middleware import (
+    ResponseStandardizationMiddleware, SecurityHeadersMiddleware, 
+    RequestLoggingMiddleware, CircuitBreakerMiddleware
 )
 
 
@@ -100,6 +107,24 @@ if settings.is_production:
         allowed_hosts=["*"]  # Configure with actual domains in production
     )
 
+# Session middleware (required for CSRF)
+app.add_middleware(
+    SessionMiddleware,
+    secret_key=settings.SECRET_KEY,
+    max_age=86400 * 7,  # 7 days
+    same_site="strict",
+    https_only=settings.is_production
+)
+
+# CSRF middleware for admin endpoints
+app.add_middleware(
+    CSRFMiddleware,
+    secret_key=settings.SECRET_KEY,
+    exempt_urls=["/health", "/api/v1", "/api/v2", "/docs", "/redoc"],  # Exempt API endpoints
+    cookie_secure=settings.is_production,
+    cookie_samesite="strict"
+)
+
 # CORS middleware
 cors_origins = settings.CORS_ORIGINS if getattr(settings, "CORS_ORIGINS", []) else (["*"] if settings.is_development else [])
 app.add_middleware(
@@ -110,11 +135,19 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
+# Add custom middleware stack
+app.add_middleware(RequestLoggingMiddleware)
+app.add_middleware(SecurityHeadersMiddleware) 
+app.add_middleware(ResponseStandardizationMiddleware)
+app.add_middleware(CircuitBreakerMiddleware)
+
 # API Versioning Middleware
 app.middleware("http")(create_version_middleware())
 
+# Add rate limiting middleware
+app.middleware("http")(rate_limit_middleware)
 
-# Correlation ID middleware
+# Add correlation ID middleware
 @app.middleware("http")
 async def add_correlation_id(request: Request, call_next):
     """Add correlation ID to requests for tracing across services."""

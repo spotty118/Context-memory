@@ -28,10 +28,14 @@ async def get_redis_client() -> redis.Redis:
             _redis_client = redis.from_url(
                 settings.REDIS_URL,
                 decode_responses=True,
-                max_connections=20,
+                max_connections=50,  # Increased for better concurrency
                 retry_on_timeout=True,
-                socket_connect_timeout=5,
-                socket_timeout=5
+                retry_on_error=[redis.ConnectionError, redis.TimeoutError],
+                socket_connect_timeout=10,
+                socket_timeout=30,
+                socket_keepalive=True,
+                socket_keepalive_options={},
+                health_check_interval=30
             )
             # Test the connection
             await _redis_client.ping()

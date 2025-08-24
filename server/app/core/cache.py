@@ -282,6 +282,57 @@ class CacheManager:
             logger.exception("cache_delete_error", key=key)
             return False
     
+    async def clear_pattern(self, pattern: str) -> int:
+        """
+        Clear all cache entries matching a pattern using SCAN for better performance.
+        
+        Args:
+            pattern: Redis pattern (e.g., "cmg:models:*")
+            
+        Returns:
+            Number of keys deleted
+        """
+        try:
+            redis_client = await self.get_redis_client()
+            keys_to_delete = []
+            
+            # Use SCAN instead of KEYS for better performance
+            cursor = 0
+            while True:
+                cursor, keys = await redis_client.scan(cursor=cursor, match=pattern, count=100)
+                keys_to_delete.extend(keys)
+                if cursor == 0:
+                    break
+            
+            if keys_to_delete:
+                # Use pipeline for batch deletion
+                pipe = redis_client.pipeline()
+                
+                # Split into batches to avoid memory issues with large datasets
+                batch_size = 100
+                total_deleted = 0
+                
+                for i in range(0, len(keys_to_delete), batch_size):
+                    batch = keys_to_delete[i:i + batch_size]
+                    pipe.delete(*batch)
+                    results = await pipe.execute()
+                    total_deleted += sum(results)
+                    pipe.reset()
+                
+                # Clean memory cache
+                memory_keys_to_delete = [k for k in self._memory_cache.keys() if self._matches_pattern(k, pattern)]
+                for key in memory_keys_to_delete:
+                    del self._memory_cache[key]
+                
+                logger.info("cache_pattern_invalidated", pattern=pattern, deleted_count=total_deleted)
+                return total_deleted
+            
+            return 0
+            
+        except Exception as e:
+            logger.exception("cache_clear_error", pattern=pattern)
+            return 0
+    
     async def invalidate_pattern(self, pattern: str) -> int:
         """
         Invalidate all keys matching a pattern.

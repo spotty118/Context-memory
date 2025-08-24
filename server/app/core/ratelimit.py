@@ -9,20 +9,15 @@ import structlog
 
 from app.core.config import settings
 from app.db.models import APIKey
+from app.core.redis import get_redis_client
 
 
 logger = structlog.get_logger(__name__)
 
-# Global Redis connection
-_redis_client: Optional[redis.Redis] = None
-
-
+# Use shared Redis client from core.redis
 async def get_redis() -> redis.Redis:
-    """Get Redis client instance."""
-    global _redis_client
-    if _redis_client is None:
-        _redis_client = redis.from_url(settings.REDIS_URL, decode_responses=True)
-    return _redis_client
+    """Get Redis client instance from shared pool."""
+    return await get_redis_client()
 
 
 class TokenBucket:
@@ -38,7 +33,8 @@ class TokenBucket:
             refill_rate: Tokens added per window
             window_seconds: Time window in seconds
         """
-        self.key = f"rate_limit:{key}"
+        # Use hierarchical key naming per Redis best practices
+        self.key = f"cmg:ratelimit:{key}"
         self.capacity = capacity
         self.refill_rate = refill_rate
         self.window_seconds = window_seconds

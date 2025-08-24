@@ -30,7 +30,7 @@
                                    value="{{ settings.openrouter_api_key or 'Not configured' }}" 
                                    readonly
                                    class="block w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm bg-gray-50 text-gray-500 sm:text-sm">
-                            <button class="inline-flex items-center px-3 py-2 border border-gray-300 shadow-sm text-sm leading-4 font-medium rounded-md text-gray-700 bg-white hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500">
+                            <button onclick="editAPIKey()" class="inline-flex items-center px-3 py-2 border border-gray-300 shadow-sm text-sm leading-4 font-medium rounded-md text-gray-700 bg-white hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500">
                                 <i data-lucide="edit" class="w-4 h-4"></i>
                             </button>
                         </div>
@@ -39,7 +39,7 @@
                     
                     <div>
                         <label class="block text-sm font-medium text-gray-700">Default Model</label>
-                        <select class="mt-1 block w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-indigo-500 focus:border-indigo-500 sm:text-sm">
+                        <select name="default_model" id="default_model" class="mt-1 block w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-indigo-500 focus:border-indigo-500 sm:text-sm">
                             <option value="openai/gpt-4" {% if settings.default_model == 'openai/gpt-4' %}selected{% endif %}>GPT-4</option>
                             <option value="anthropic/claude-3-opus" {% if settings.default_model == 'anthropic/claude-3-opus' %}selected{% endif %}>Claude 3 Opus</option>
                             <option value="google/gemini-pro" {% if settings.default_model == 'google/gemini-pro' %}selected{% endif %}>Gemini Pro</option>
@@ -63,6 +63,8 @@
                     <div>
                         <label class="block text-sm font-medium text-gray-700">Requests per Window</label>
                         <input type="number" 
+                               name="rate_limit_requests"
+                               id="rate_limit_requests"
                                value="{{ settings.rate_limit_requests or 100 }}"
                                class="mt-1 block w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-indigo-500 focus:border-indigo-500 sm:text-sm">
                         <p class="mt-1 text-xs text-gray-500">Maximum requests per time window</p>
@@ -71,6 +73,8 @@
                     <div>
                         <label class="block text-sm font-medium text-gray-700">Time Window (seconds)</label>
                         <input type="number" 
+                               name="rate_limit_window"
+                               id="rate_limit_window"
                                value="{{ settings.rate_limit_window or 60 }}"
                                class="mt-1 block w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-indigo-500 focus:border-indigo-500 sm:text-sm">
                         <p class="mt-1 text-xs text-gray-500">Time window in seconds</p>
@@ -79,6 +83,8 @@
                     <div>
                         <label class="block text-sm font-medium text-gray-700">Max Tokens</label>
                         <input type="number" 
+                               name="max_tokens"
+                               id="max_tokens"
                                value="{{ settings.max_tokens or 4096 }}"
                                class="mt-1 block w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-indigo-500 focus:border-indigo-500 sm:text-sm">
                         <p class="mt-1 text-xs text-gray-500">Maximum tokens per request</p>
@@ -137,7 +143,9 @@
                     <div>
                         <label class="block text-sm font-medium text-gray-700">Default Token Budget</label>
                         <input type="number" 
-                               value="8000"
+                               name="default_token_budget"
+                               id="default_token_budget"
+                               value="{{ settings.default_token_budget or 8000 }}"
                                class="mt-1 block w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-indigo-500 focus:border-indigo-500 sm:text-sm">
                         <p class="mt-1 text-xs text-gray-500">Default working set token budget</p>
                     </div>
@@ -145,17 +153,19 @@
                     <div>
                         <label class="block text-sm font-medium text-gray-700">Max Context Items</label>
                         <input type="number" 
-                               value="50"
+                               name="max_context_items"
+                               id="max_context_items"
+                               value="{{ settings.max_context_items or 50 }}"
                                class="mt-1 block w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-indigo-500 focus:border-indigo-500 sm:text-sm">
                         <p class="mt-1 text-xs text-gray-500">Maximum items in working set</p>
                     </div>
                     
                     <div>
                         <label class="block text-sm font-medium text-gray-700">Embedding Model</label>
-                        <select class="mt-1 block w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-indigo-500 focus:border-indigo-500 sm:text-sm">
-                            <option value="text-embedding-ada-002">OpenAI Ada-002</option>
-                            <option value="text-embedding-3-small">OpenAI Embedding-3-Small</option>
-                            <option value="text-embedding-3-large">OpenAI Embedding-3-Large</option>
+                        <select name="embedding_model" id="embedding_model" class="mt-1 block w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-indigo-500 focus:border-indigo-500 sm:text-sm">
+                            <option value="text-embedding-ada-002" {% if settings.embedding_model == 'text-embedding-ada-002' %}selected{% endif %}>OpenAI Ada-002</option>
+                            <option value="text-embedding-3-small" {% if settings.embedding_model == 'text-embedding-3-small' %}selected{% endif %}>OpenAI Embedding-3-Small</option>
+                            <option value="text-embedding-3-large" {% if settings.embedding_model == 'text-embedding-3-large' %}selected{% endif %}>OpenAI Embedding-3-Large</option>
                         </select>
                         <p class="mt-1 text-xs text-gray-500">Model for generating embeddings</p>
                     </div>
@@ -173,22 +183,22 @@
             </div>
             <div class="p-6">
                 <div class="grid grid-cols-1 gap-6 sm:grid-cols-2 lg:grid-cols-4">
-                    <button class="inline-flex items-center justify-center px-4 py-2 border border-gray-300 shadow-sm text-sm font-medium rounded-md text-gray-700 bg-white hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500">
+                    <button onclick="syncModels()" class="inline-flex items-center justify-center px-4 py-2 border border-gray-300 shadow-sm text-sm font-medium rounded-md text-gray-700 bg-white hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500">
                         <i data-lucide="refresh-cw" class="w-4 h-4 mr-2"></i>
                         Sync Models
                     </button>
                     
-                    <button class="inline-flex items-center justify-center px-4 py-2 border border-gray-300 shadow-sm text-sm font-medium rounded-md text-gray-700 bg-white hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500">
+                    <button onclick="cleanupContext()" class="inline-flex items-center justify-center px-4 py-2 border border-gray-300 shadow-sm text-sm font-medium rounded-md text-gray-700 bg-white hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500">
                         <i data-lucide="database" class="w-4 h-4 mr-2"></i>
                         Cleanup Context
                     </button>
                     
-                    <button class="inline-flex items-center justify-center px-4 py-2 border border-gray-300 shadow-sm text-sm font-medium rounded-md text-gray-700 bg-white hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500">
+                    <button onclick="exportLogs()" class="inline-flex items-center justify-center px-4 py-2 border border-gray-300 shadow-sm text-sm font-medium rounded-md text-gray-700 bg-white hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500">
                         <i data-lucide="download" class="w-4 h-4 mr-2"></i>
                         Export Logs
                     </button>
                     
-                    <button class="inline-flex items-center justify-center px-4 py-2 border border-red-300 shadow-sm text-sm font-medium rounded-md text-red-700 bg-white hover:bg-red-50 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-red-500">
+                    <button onclick="clearCache()" class="inline-flex items-center justify-center px-4 py-2 border border-red-300 shadow-sm text-sm font-medium rounded-md text-red-700 bg-white hover:bg-red-50 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-red-500">
                         <i data-lucide="trash-2" class="w-4 h-4 mr-2"></i>
                         Clear Cache
                     </button>
@@ -199,6 +209,7 @@
         <!-- Save Button -->
         <div class="flex justify-end">
             <button type="button" 
+                    onclick="saveSettings()"
                     class="inline-flex items-center px-6 py-3 border border-transparent text-base font-medium rounded-md shadow-sm text-white bg-indigo-600 hover:bg-indigo-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500 transition-colors">
                 <i data-lucide="save" class="w-5 h-5 mr-2"></i>
                 Save Settings
@@ -210,18 +221,272 @@
 
 {% block scripts %}
 <script>
-    // Auto-save functionality
-    function autoSave() {
-        console.log('Auto-saving settings...');
-        // This would typically send form data to the server
-    }
-    
-    // Save settings on form change
-    document.addEventListener('change', function(e) {
-        if (e.target.matches('input, select')) {
-            setTimeout(autoSave, 1000); // Debounce auto-save
-        }
+    let settingsChanged = false;
+    let autoSaveTimeout = null;
+
+    // Initialize settings management
+    document.addEventListener('DOMContentLoaded', function() {
+        loadCurrentSettings();
+        
+        // Track changes
+        document.addEventListener('change', function(e) {
+            if (e.target.matches('input, select')) {
+                settingsChanged = true;
+                // Clear existing timeout
+                if (autoSaveTimeout) {
+                    clearTimeout(autoSaveTimeout);
+                }
+                // Debounce auto-save
+                autoSaveTimeout = setTimeout(autoSaveSettings, 2000);
+            }
+        });
     });
+
+    // Load current settings from backend
+    async function loadCurrentSettings() {
+        try {
+            const response = await makeAuthenticatedRequest('/admin/settings');
+            const result = await response.json();
+            
+            if (result.success) {
+                const settings = result.settings;
+                
+                // Update form fields with current values
+                if (settings.default_model) {
+                    document.getElementById('default_model').value = settings.default_model;
+                }
+                if (settings.rate_limit_requests !== undefined) {
+                    document.getElementById('rate_limit_requests').value = settings.rate_limit_requests;
+                }
+                if (settings.rate_limit_window !== undefined) {
+                    document.getElementById('rate_limit_window').value = settings.rate_limit_window;
+                }
+                if (settings.max_tokens !== undefined) {
+                    document.getElementById('max_tokens').value = settings.max_tokens;
+                }
+                if (settings.default_token_budget !== undefined) {
+                    document.getElementById('default_token_budget').value = settings.default_token_budget;
+                }
+                if (settings.max_context_items !== undefined) {
+                    document.getElementById('max_context_items').value = settings.max_context_items;
+                }
+                if (settings.embedding_model) {
+                    document.getElementById('embedding_model').value = settings.embedding_model;
+                }
+            }
+        } catch (error) {
+            showNotification('Failed to load current settings: ' + error.message, 'error');
+        }
+    }
+
+    // Auto-save functionality
+    async function autoSaveSettings() {
+        if (!settingsChanged) return;
+        
+        try {
+            await saveSettings(false); // Don't show success notification
+            settingsChanged = false;
+        } catch (error) {
+            console.log('Auto-save failed:', error);
+        }
+    }
+
+    // Save settings to backend
+    async function saveSettings(showSuccess = true) {
+        try {
+            const formData = new FormData();
+            
+            // Collect all form values
+            formData.append('default_model', document.getElementById('default_model').value);
+            formData.append('rate_limit_requests', document.getElementById('rate_limit_requests').value);
+            formData.append('rate_limit_window', document.getElementById('rate_limit_window').value);
+            formData.append('max_tokens', document.getElementById('max_tokens').value);
+            formData.append('default_token_budget', document.getElementById('default_token_budget').value);
+            formData.append('max_context_items', document.getElementById('max_context_items').value);
+            formData.append('embedding_model', document.getElementById('embedding_model').value);
+            
+            const response = await makeAuthenticatedRequest('/admin/settings', {
+                method: 'PUT',
+                body: formData
+            });
+            
+            const result = await response.json();
+            
+            if (result.success) {
+                if (showSuccess) {
+                    showNotification(result.message, 'success');
+                }
+                settingsChanged = false;
+            } else {
+                showNotification('Error: ' + result.error, 'error');
+            }
+        } catch (error) {
+            showNotification('Failed to save settings: ' + error.message, 'error');
+        }
+    }
+
+    // Edit API Key modal
+    function editAPIKey() {
+        const modal = `
+            <div class="fixed inset-0 bg-gray-600 bg-opacity-50 overflow-y-auto h-full w-full z-50" id="api-key-modal">
+                <div class="relative top-20 mx-auto p-5 border w-11/12 md:w-1/2 lg:w-1/3 shadow-lg rounded-md bg-white">
+                    <div class="mt-3">
+                        <div class="flex items-center justify-between mb-4">
+                            <h3 class="text-lg font-medium text-gray-900">Update OpenRouter API Key</h3>
+                            <button onclick="closeModal()" class="text-gray-400 hover:text-gray-600">
+                                <i data-lucide="x" class="w-6 h-6"></i>
+                            </button>
+                        </div>
+                        <form id="api-key-form" class="space-y-4">
+                            <div>
+                                <label class="block text-sm font-medium text-gray-700">New API Key</label>
+                                <input type="password" name="api_key" required placeholder="sk-or-..." 
+                                       class="mt-1 block w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-indigo-500 focus:border-indigo-500">
+                                <p class="mt-1 text-xs text-gray-500">Your OpenRouter API key will be stored securely</p>
+                            </div>
+                            <div class="flex justify-end space-x-3">
+                                <button type="button" onclick="closeModal()" class="px-4 py-2 bg-gray-300 text-gray-700 rounded-md hover:bg-gray-400">
+                                    Cancel
+                                </button>
+                                <button type="submit" class="px-4 py-2 bg-indigo-600 text-white rounded-md hover:bg-indigo-700">
+                                    Update API Key
+                                </button>
+                            </div>
+                        </form>
+                    </div>
+                </div>
+            </div>
+        `;
+        
+        document.body.insertAdjacentHTML('beforeend', modal);
+        lucide.createIcons();
+        
+        // Handle form submission
+        document.getElementById('api-key-form').addEventListener('submit', async function(e) {
+            e.preventDefault();
+            await updateAPIKey(new FormData(this));
+        });
+    }
+
+    // Update API key
+    async function updateAPIKey(formData) {
+        try {
+            const response = await makeAuthenticatedRequest('/admin/settings/api-key', {
+                method: 'PUT',
+                body: formData
+            });
+            
+            const result = await response.json();
+            
+            if (result.success) {
+                showNotification(result.message, 'success');
+                closeModal();
+                // Reload page to show updated key status
+                setTimeout(() => window.location.reload(), 1000);
+            } else {
+                showNotification('Error: ' + result.error, 'error');
+            }
+        } catch (error) {
+            showNotification('Failed to update API key: ' + error.message, 'error');
+        }
+    }
+
+    // Maintenance functions
+    async function syncModels() {
+        if (!confirm('This will sync models from OpenRouter. Continue?')) {
+            return;
+        }
+        
+        try {
+            const response = await makeAuthenticatedRequest('/admin/maintenance/sync-models', {
+                method: 'POST'
+            });
+            
+            const result = await response.json();
+            
+            if (result.success) {
+                showNotification(result.message, 'success');
+            } else {
+                showNotification('Error: ' + result.error, 'error');
+            }
+        } catch (error) {
+            showNotification('Failed to sync models: ' + error.message, 'error');
+        }
+    }
+
+    async function cleanupContext() {
+        if (!confirm('This will cleanup old context items. Continue?')) {
+            return;
+        }
+        
+        // Redirect to context page cleanup
+        window.location.href = '/admin/context';
+    }
+
+    async function exportLogs() {
+        try {
+            showNotification('Preparing log export...', 'info');
+            
+            // Create download link
+            const link = document.createElement('a');
+            link.href = '/admin/maintenance/export-logs?days=7';
+            link.download = `system_logs_${new Date().toISOString().slice(0,10)}.log`;
+            link.style.display = 'none';
+            document.body.appendChild(link);
+            link.click();
+            document.body.removeChild(link);
+            
+            showNotification('Log export started. Check your downloads folder.', 'success');
+        } catch (error) {
+            showNotification('Failed to export logs: ' + error.message, 'error');
+        }
+    }
+
+    async function clearCache() {
+        if (!confirm('This will clear all system caches. Continue?')) {
+            return;
+        }
+        
+        try {
+            const response = await makeAuthenticatedRequest('/admin/maintenance/clear-cache', {
+                method: 'POST'
+            });
+            
+            const result = await response.json();
+            
+            if (result.success) {
+                showNotification(result.message, 'success');
+            } else {
+                showNotification('Error: ' + result.error, 'error');
+            }
+        } catch (error) {
+            showNotification('Failed to clear cache: ' + error.message, 'error');
+        }
+    }
+
+    // Utility functions
+    function closeModal() {
+        const modal = document.getElementById('api-key-modal');
+        if (modal) {
+            modal.remove();
+        }
+    }
+
+    function showNotification(message, type = 'info') {
+        const notification = document.createElement('div');
+        notification.className = `fixed top-4 right-4 z-50 px-4 py-3 rounded-md shadow-lg ${
+            type === 'success' ? 'bg-green-100 text-green-800 border border-green-200' :
+            type === 'error' ? 'bg-red-100 text-red-800 border border-red-200' :
+            'bg-blue-100 text-blue-800 border border-blue-200'
+        }`;
+        notification.textContent = message;
+        
+        document.body.appendChild(notification);
+        
+        setTimeout(() => {
+            notification.remove();
+        }, 5000);
+    }
 </script>
 {% endblock %}
 

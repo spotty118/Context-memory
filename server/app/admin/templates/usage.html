@@ -13,13 +13,14 @@
         </div>
         <div class="mt-4 sm:mt-0">
             <div class="flex items-center space-x-3">
-                <select class="block w-full pl-3 pr-10 py-2 text-base border border-gray-300 focus:outline-none focus:ring-indigo-500 focus:border-indigo-500 sm:text-sm rounded-md">
+                <select id="timeRange" onchange="updateTimeRange()" class="block w-full pl-3 pr-10 py-2 text-base border border-gray-300 focus:outline-none focus:ring-indigo-500 focus:border-indigo-500 sm:text-sm rounded-md">
                     <option value="24h">Last 24 Hours</option>
                     <option value="7d" selected>Last 7 Days</option>
                     <option value="30d">Last 30 Days</option>
                     <option value="90d">Last 90 Days</option>
                 </select>
                 <button type="button" 
+                        onclick="exportAnalytics()"
                         class="inline-flex items-center px-4 py-2 border border-gray-300 text-sm font-medium rounded-md text-gray-700 bg-white hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500 transition-colors">
                     <i data-lucide="download" class="w-4 h-4 mr-2"></i>
                     Export
@@ -41,7 +42,7 @@
                     <div class="ml-5 w-0 flex-1">
                         <dl>
                             <dt class="text-sm font-medium text-gray-500 truncate">Total Requests</dt>
-                            <dd class="text-lg font-medium text-gray-900">{{ analytics.total_requests | default('45,678') }}</dd>
+                            <dd class="text-lg font-medium text-gray-900" data-metric="total-requests">{{ analytics.total_requests | default('45,678') }}</dd>
                         </dl>
                     </div>
                 </div>
@@ -65,7 +66,7 @@
                     <div class="ml-5 w-0 flex-1">
                         <dl>
                             <dt class="text-sm font-medium text-gray-500 truncate">Avg Response Time</dt>
-                            <dd class="text-lg font-medium text-gray-900">{{ analytics.avg_response_time | default('245ms') }}</dd>
+                            <dd class="text-lg font-medium text-gray-900" data-metric="avg-response-time">{{ analytics.avg_response_time | default('245ms') }}</dd>
                         </dl>
                     </div>
                 </div>
@@ -89,7 +90,7 @@
                     <div class="ml-5 w-0 flex-1">
                         <dl>
                             <dt class="text-sm font-medium text-gray-500 truncate">Total Cost</dt>
-                            <dd class="text-lg font-medium text-gray-900">{{ analytics.total_cost | default('$1,234.56') }}</dd>
+                            <dd class="text-lg font-medium text-gray-900" data-metric="total-cost">{{ analytics.total_cost | default('$1,234.56') }}</dd>
                         </dl>
                     </div>
                 </div>
@@ -113,7 +114,7 @@
                     <div class="ml-5 w-0 flex-1">
                         <dl>
                             <dt class="text-sm font-medium text-gray-500 truncate">Error Rate</dt>
-                            <dd class="text-lg font-medium text-gray-900">{{ analytics.error_rate | default('0.12%') }}</dd>
+                            <dd class="text-lg font-medium text-gray-900" data-metric="error-rate">{{ analytics.error_rate | default('0.12%') }}</dd>
                         </dl>
                     </div>
                 </div>
@@ -252,7 +253,7 @@
         </div>
 
         <!-- Performance Metrics -->
-        <div class="bg-white shadow rounded-lg p-6">
+        <div class="bg-white shadow rounded-lg p-6" data-section="performance-metrics">
             <div class="flex items-center justify-between mb-4">
                 <h3 class="text-lg font-medium text-gray-900">Performance Metrics</h3>
                 <i data-lucide="activity" class="w-5 h-5 text-gray-400"></i>
@@ -260,27 +261,27 @@
             <div class="space-y-4">
                 <div class="flex items-center justify-between">
                     <span class="text-sm font-medium text-gray-900">P50 Response Time</span>
-                    <span class="text-sm text-gray-600">185ms</span>
+                    <span class="text-sm text-gray-600" data-metric="p50">185ms</span>
                 </div>
                 <div class="flex items-center justify-between">
                     <span class="text-sm font-medium text-gray-900">P95 Response Time</span>
-                    <span class="text-sm text-gray-600">450ms</span>
+                    <span class="text-sm text-gray-600" data-metric="p95">450ms</span>
                 </div>
                 <div class="flex items-center justify-between">
                     <span class="text-sm font-medium text-gray-900">P99 Response Time</span>
-                    <span class="text-sm text-gray-600">890ms</span>
+                    <span class="text-sm text-gray-600" data-metric="p99">890ms</span>
                 </div>
                 <div class="flex items-center justify-between">
                     <span class="text-sm font-medium text-gray-900">Uptime</span>
-                    <span class="text-sm text-green-600">99.97%</span>
+                    <span class="text-sm text-green-600" data-metric="uptime">99.97%</span>
                 </div>
                 <div class="flex items-center justify-between">
                     <span class="text-sm font-medium text-gray-900">Throughput</span>
-                    <span class="text-sm text-gray-600">45.2 req/sec</span>
+                    <span class="text-sm text-gray-600" data-metric="throughput">45.2 req/sec</span>
                 </div>
                 <div class="flex items-center justify-between">
                     <span class="text-sm font-medium text-gray-900">Cache Hit Rate</span>
-                    <span class="text-sm text-blue-600">78.5%</span>
+                    <span class="text-sm text-blue-600" data-metric="cache-hit-rate">78.5%</span>
                 </div>
             </div>
         </div>
@@ -290,15 +291,189 @@
 
 {% block scripts %}
 <script>
-    // Initialize charts
+    let currentTimeRange = '7d';
+    let requestVolumeChart = null;
+    let responseTimeChart = null;
+
+    // Initialize page
     document.addEventListener('DOMContentLoaded', function() {
+        loadAnalyticsData();
+        loadPerformanceMetrics();
+        loadErrorAnalysis();
+        initCharts();
+    });
+
+    // Update time range and reload data
+    function updateTimeRange() {
+        const timeRange = document.getElementById('timeRange').value;
+        currentTimeRange = timeRange;
+        loadAnalyticsData();
+        loadPerformanceMetrics();
+        loadErrorAnalysis();
+    }
+
+    // Load usage analytics data
+    async function loadAnalyticsData() {
+        try {
+            const response = await makeAuthenticatedRequest(`/admin/analytics/usage?time_range=${currentTimeRange}`, {
+                method: 'GET'
+            });
+
+            if (response.ok) {
+                const data = await response.json();
+                updateAnalyticsUI(data);
+                updateCharts(data);
+            } else {
+                showNotification('Failed to load analytics data', 'error');
+            }
+        } catch (error) {
+            console.error('Error loading analytics data:', error);
+            showNotification('Error loading analytics data', 'error');
+        }
+    }
+
+    // Load performance metrics
+    async function loadPerformanceMetrics() {
+        try {
+            const response = await makeAuthenticatedRequest(`/admin/analytics/performance?time_range=${currentTimeRange}`, {
+                method: 'GET'
+            });
+
+            if (response.ok) {
+                const data = await response.json();
+                updatePerformanceMetrics(data);
+            } else {
+                showNotification('Failed to load performance metrics', 'error');
+            }
+        } catch (error) {
+            console.error('Error loading performance metrics:', error);
+            showNotification('Error loading performance metrics', 'error');
+        }
+    }
+
+    // Load error analysis data
+    async function loadErrorAnalysis() {
+        try {
+            const response = await makeAuthenticatedRequest(`/admin/analytics/errors?time_range=${currentTimeRange}`, {
+                method: 'GET'
+            });
+
+            if (response.ok) {
+                const data = await response.json();
+                updateErrorAnalysis(data);
+            } else {
+                showNotification('Failed to load error analysis', 'error');
+            }
+        } catch (error) {
+            console.error('Error loading error analysis:', error);
+            showNotification('Error loading error analysis', 'error');
+        }
+    }
+
+    // Export analytics data
+    async function exportAnalytics() {
+        try {
+            const response = await makeAuthenticatedRequest(`/admin/analytics/export?time_range=${currentTimeRange}&format=csv`, {
+                method: 'GET'
+            });
+
+            if (response.ok) {
+                const blob = await response.blob();
+                const url = window.URL.createObjectURL(blob);
+                const a = document.createElement('a');
+                a.style.display = 'none';
+                a.href = url;
+                a.download = `analytics_${currentTimeRange}_${new Date().toISOString().split('T')[0]}.csv`;
+                document.body.appendChild(a);
+                a.click();
+                window.URL.revokeObjectURL(url);
+                showNotification('Analytics exported successfully', 'success');
+            } else {
+                showNotification('Failed to export analytics', 'error');
+            }
+        } catch (error) {
+            console.error('Error exporting analytics:', error);
+            showNotification('Error exporting analytics', 'error');
+        }
+    }
+
+    // Update analytics UI with real data
+    function updateAnalyticsUI(data) {
+        // Update key metrics cards
+        const totalRequestsEl = document.querySelector('[data-metric="total-requests"]');
+        const avgResponseTimeEl = document.querySelector('[data-metric="avg-response-time"]');
+        const totalCostEl = document.querySelector('[data-metric="total-cost"]');
+        const errorRateEl = document.querySelector('[data-metric="error-rate"]');
+
+        if (totalRequestsEl) totalRequestsEl.textContent = data.total_requests?.toLocaleString() || '0';
+        if (avgResponseTimeEl) avgResponseTimeEl.textContent = data.avg_response_time ? `${data.avg_response_time}ms` : '0ms';
+        if (totalCostEl) totalCostEl.textContent = data.total_cost ? `$${data.total_cost.toFixed(2)}` : '$0.00';
+        if (errorRateEl) errorRateEl.textContent = data.error_rate ? `${data.error_rate.toFixed(2)}%` : '0.00%';
+
+        // Update model usage if available
+        if (data.model_usage) {
+            updateModelUsage(data.model_usage);
+        }
+
+        // Update top endpoints if available
+        if (data.top_endpoints) {
+            updateTopEndpoints(data.top_endpoints);
+        }
+    }
+
+    // Update performance metrics
+    function updatePerformanceMetrics(data) {
+        const metricsContainer = document.querySelector('[data-section="performance-metrics"]');
+        if (!metricsContainer || !data.metrics) return;
+
+        const metrics = data.metrics;
+        const metricElements = {
+            'p50': metricsContainer.querySelector('[data-metric="p50"]'),
+            'p95': metricsContainer.querySelector('[data-metric="p95"]'),
+            'p99': metricsContainer.querySelector('[data-metric="p99"]'),
+            'uptime': metricsContainer.querySelector('[data-metric="uptime"]'),
+            'throughput': metricsContainer.querySelector('[data-metric="throughput"]'),
+            'cache_hit_rate': metricsContainer.querySelector('[data-metric="cache-hit-rate"]')
+        };
+
+        if (metricElements.p50 && metrics.p50) metricElements.p50.textContent = `${metrics.p50}ms`;
+        if (metricElements.p95 && metrics.p95) metricElements.p95.textContent = `${metrics.p95}ms`;
+        if (metricElements.p99 && metrics.p99) metricElements.p99.textContent = `${metrics.p99}ms`;
+        if (metricElements.uptime && metrics.uptime) metricElements.uptime.textContent = `${metrics.uptime.toFixed(2)}%`;
+        if (metricElements.throughput && metrics.throughput) metricElements.throughput.textContent = `${metrics.throughput.toFixed(1)} req/sec`;
+        if (metricElements.cache_hit_rate && metrics.cache_hit_rate) metricElements.cache_hit_rate.textContent = `${metrics.cache_hit_rate.toFixed(1)}%`;
+    }
+
+    // Update error analysis
+    function updateErrorAnalysis(data) {
+        // Implementation would update the error analysis section with real data
+        // For now, we'll keep the existing static data
+    }
+
+    // Initialize charts
+    function initCharts() {
         initRequestVolumeChart();
         initResponseTimeChart();
-    });
+    }
+
+    // Update charts with real data
+    function updateCharts(data) {
+        if (data.request_volume && requestVolumeChart) {
+            requestVolumeChart.data.labels = data.request_volume.labels || ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
+            requestVolumeChart.data.datasets[0].data = data.request_volume.total || [4200, 5100, 4800, 6200, 5800, 4500, 3900];
+            requestVolumeChart.data.datasets[1].data = data.request_volume.successful || [4150, 5050, 4750, 6150, 5750, 4450, 3850];
+            requestVolumeChart.update();
+        }
+
+        if (data.response_time_distribution && responseTimeChart) {
+            responseTimeChart.data.datasets[0].data = data.response_time_distribution.data || [15420, 18650, 8940, 2340, 328];
+            responseTimeChart.update();
+        }
+    }
 
     function initRequestVolumeChart() {
         const ctx = document.getElementById('requestVolumeChart').getContext('2d');
-        new Chart(ctx, {
+        requestVolumeChart = new Chart(ctx, {
             type: 'line',
             data: {
                 labels: ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'],
@@ -345,7 +520,7 @@
 
     function initResponseTimeChart() {
         const ctx = document.getElementById('responseTimeChart').getContext('2d');
-        new Chart(ctx, {
+        responseTimeChart = new Chart(ctx, {
             type: 'bar',
             data: {
                 labels: ['0-100ms', '100-200ms', '200-500ms', '500ms-1s', '1s+'],

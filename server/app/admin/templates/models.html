@@ -15,7 +15,10 @@
             <button type="button" 
                     class="inline-flex items-center px-4 py-2 border border-gray-300 text-sm font-medium rounded-md text-gray-700 bg-white hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500 transition-colors"
                     hx-get="/admin/models/sync-status"
-                    hx-target="#sync-status">
+                    hx-target="#sync-status"
+                    hx-swap="innerHTML"
+                    hx-indicator=".htmx-indicator"
+                    hx-on::error="showNotification('Failed to check sync status', 'error')">
                 <i data-lucide="refresh-cw" class="w-4 h-4 mr-2"></i>
                 Check Sync Status
             </button>
@@ -268,7 +271,9 @@
         btn.disabled = true;
         
         try {
-            const response = await fetch('/admin/models/fetch');
+            const response = await makeAuthenticatedRequest('/admin/models/fetch', {
+                credentials: 'same-origin'
+            });
             const data = await response.json();
             
             if (data.success) {
@@ -489,11 +494,9 @@
 
     async function enableModelForUsers(modelId) {
         try {
-            const response = await fetch(`/admin/models/${modelId}/enable`, {
+            const response = await makeAuthenticatedRequest(`/admin/models/${modelId}/enable`, {
                 method: 'POST',
-                headers: {
-                    'Content-Type': 'application/json'
-                }
+                credentials: 'same-origin'
             });
             
             const data = await response.json();
@@ -600,8 +603,8 @@
     // Load stored models stats on page load
     document.addEventListener('DOMContentLoaded', function() {
         // Update stats with current database models
-        const totalModels = {{ total_models | default(0) }};
-        const activeModels = {{ active_models | default(0) }};
+        const totalModels = {{ stats.total_models | default(0) }};
+        const activeModels = {{ stats.active_models | default(0) }};
         
         const activeEl = document.querySelector('[data-stat="active-models"]');
         const providersEl = document.querySelector('[data-stat="total-providers"]');
@@ -609,10 +612,8 @@
         if (activeEl) activeEl.textContent = totalModels;
         
         // Calculate unique providers from current models
-        const providerSet = new Set();
-        {% for model in models %}
-        providerSet.add('{{ model.provider | title }}');
-        {% endfor %}
+        const providers = [{% for model in models %}'{{ model.provider | title }}'{% if not loop.last %},{% endif %}{% endfor %}];
+        const providerSet = new Set(providers);
         if (providersEl) providersEl.textContent = providerSet.size;
         
         // Show sync status if models exist

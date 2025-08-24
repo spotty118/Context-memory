@@ -213,6 +213,34 @@
         // Initialize Lucide icons
         lucide.createIcons();
         
+        // Get CSRF token from cookie
+        function getCSRFToken() {
+            const cookies = document.cookie.split(';');
+            for (let cookie of cookies) {
+                const [name, value] = cookie.trim().split('=');
+                if (name === 'csrftoken') {
+                    return decodeURIComponent(value);
+                }
+            }
+            return null;
+        }
+        
+        // Configure HTMX to include CSRF token in all requests
+        document.body.addEventListener('htmx:configRequest', function(evt) {
+            const csrfToken = getCSRFToken();
+            if (csrfToken) {
+                evt.detail.headers['X-CSRFToken'] = csrfToken;
+            }
+        });
+        
+        // Handle CSRF errors
+        document.body.addEventListener('htmx:responseError', function(evt) {
+            if (evt.detail.xhr.status === 403) {
+                // CSRF failure - reload page to get new token
+                window.location.reload();
+            }
+        });
+        
         // Sidebar toggle for mobile
         function toggleSidebar() {
             const sidebar = document.getElementById('sidebar');
@@ -236,6 +264,24 @@
             // This would typically fetch real status from an API
             console.log('Status check...');
         }, 30000);
+        
+        // Utility function for making authenticated AJAX requests
+        function makeAuthenticatedRequest(url, options = {}) {
+            const csrfToken = getCSRFToken();
+            const headers = {
+                'Content-Type': 'application/json',
+                'X-CSRFToken': csrfToken,
+                ...options.headers
+            };
+            
+            return fetch(url, {
+                ...options,
+                headers
+            });
+        }
+        
+        // Make authenticated request function available globally
+        window.makeAuthenticatedRequest = makeAuthenticatedRequest;
     </script>
     
     {% block scripts %}{% endblock %}

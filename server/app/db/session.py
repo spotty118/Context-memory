@@ -8,7 +8,7 @@ from sqlalchemy.orm import sessionmaker as sa_sessionmaker, Session as SyncSessi
 
 from typing import AsyncGenerator
 from sqlalchemy.ext.asyncio import create_async_engine, AsyncSession, async_sessionmaker
-from sqlalchemy.pool import NullPool
+from sqlalchemy.pool import NullPool, AsyncAdaptedQueuePool
 import structlog
 
 from app.core.config import settings
@@ -33,11 +33,13 @@ def create_engine():
             async_url = db_url
         engine = create_async_engine(
             async_url,
+            poolclass=AsyncAdaptedQueuePool if settings.ENVIRONMENT != "serverless" else NullPool,
             pool_size=settings.DATABASE_POOL_SIZE,
             max_overflow=settings.DATABASE_MAX_OVERFLOW,
             pool_pre_ping=True,
+            pool_recycle=3600,  # Recycle connections after 1 hour
+            pool_timeout=30,    # Timeout for getting connection from pool
             echo=settings.is_development and settings.DEBUG,
-            poolclass=NullPool if settings.ENVIRONMENT == "serverless" else None,
         )
 
         logger.info(
@@ -60,6 +62,8 @@ def create_session_maker():
             engine,
             class_=AsyncSession,
             expire_on_commit=False,
+            autoflush=False,  # Better control over when to flush
+            autocommit=False,  # Explicit transaction control
         )
 
         logger.info("database_session_maker_created")
