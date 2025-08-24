@@ -111,9 +111,9 @@
             <div class="flex items-center justify-between mb-4">
                 <h3 class="text-lg font-medium text-gray-900">Request Volume</h3>
                 <div class="flex items-center space-x-2">
-                    <button class="text-sm text-gray-500 hover:text-gray-700 px-2 py-1 rounded" onclick="updateChart('24h')">24h</button>
-                    <button class="text-sm text-gray-500 hover:text-gray-700 px-2 py-1 rounded bg-gray-100" onclick="updateChart('7d')">7d</button>
-                    <button class="text-sm text-gray-500 hover:text-gray-700 px-2 py-1 rounded" onclick="updateChart('30d')">30d</button>
+                    <button class="chart-period-btn text-sm text-gray-500 hover:text-gray-700 px-2 py-1 rounded" onclick="updateChart('24h')">24h</button>
+                    <button class="chart-period-btn text-sm text-gray-500 hover:text-gray-700 px-2 py-1 rounded bg-gray-100" onclick="updateChart('7d')">7d</button>
+                    <button class="chart-period-btn text-sm text-gray-500 hover:text-gray-700 px-2 py-1 rounded" onclick="updateChart('30d')">30d</button>
                 </div>
             </div>
             <div class="h-64">
@@ -255,7 +255,7 @@
 
     function initRequestChart() {
         const ctx = document.getElementById('requestChart').getContext('2d');
-        new Chart(ctx, {
+        window.requestChart = new Chart(ctx, {
             type: 'line',
             data: {
                 labels: ['00:00', '04:00', '08:00', '12:00', '16:00', '20:00', '24:00'],
@@ -295,7 +295,7 @@
 
     function initModelChart() {
         const ctx = document.getElementById('modelChart').getContext('2d');
-        new Chart(ctx, {
+        window.modelChart = new Chart(ctx, {
             type: 'doughnut',
             data: {
                 labels: ['GPT-4', 'Claude-3', 'Gemini Pro', 'GPT-3.5', 'Others'],
@@ -327,10 +327,44 @@
         });
     }
 
-    function updateChart(period) {
-        // Update chart data based on period
-        console.log('Updating chart for period:', period);
-        // This would typically fetch new data from the API
+    async function updateChart(period) {
+        try {
+            const response = await makeAuthenticatedRequest(`/admin/dashboard/charts/${period}`, {
+                method: 'GET'
+            });
+            
+            if (response.ok) {
+                const data = await response.json();
+                
+                // Update request chart
+                if (window.requestChart && data.request_volume) {
+                    window.requestChart.data.labels = data.request_volume.labels;
+                    window.requestChart.data.datasets[0].data = data.request_volume.data;
+                    window.requestChart.update();
+                }
+                
+                // Update model chart
+                if (window.modelChart && data.model_usage) {
+                    const models = Object.keys(data.model_usage);
+                    const values = Object.values(data.model_usage);
+                    window.modelChart.data.labels = models;
+                    window.modelChart.data.datasets[0].data = values;
+                    window.modelChart.update();
+                }
+                
+                // Update active button style
+                document.querySelectorAll('.chart-period-btn').forEach(btn => {
+                    btn.classList.remove('bg-gray-100');
+                });
+                event.target.classList.add('bg-gray-100');
+                
+            } else {
+                showNotification('Failed to load chart data', 'error');
+            }
+        } catch (error) {
+            console.error('Error updating charts:', error);
+            showNotification('Error loading chart data', 'error');
+        }
     }
 </script>
 {% endblock %}

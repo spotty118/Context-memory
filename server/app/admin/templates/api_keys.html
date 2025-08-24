@@ -226,67 +226,24 @@
                         </span>
                         {% endif %}
                     </td>
-                    <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
-                        {{ key.created_at }}
-                    </td>
-                    <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
-                        {{ key.last_used_at }}
-                    </td>
-                    <td class="px-6 py-4 whitespace-nowrap text-right text-sm font-medium">
-                        <div class="flex items-center space-x-2">
-                            <button class="text-indigo-600 hover:text-indigo-900 p-1 rounded"
-                                    hx-get="/admin/api-keys/{{ key.id }}/edit"
-                                    hx-target="#modal-container"
-                                    title="Edit">
-                                <i data-lucide="edit" class="w-4 h-4"></i>
-                            </button>
-                            <button class="text-gray-600 hover:text-gray-900 p-1 rounded"
-                                    hx-get="/admin/api-keys/{{ key.id }}/usage"
-                                    hx-target="#modal-container"
-                                    title="View Usage">
-                                <i data-lucide="bar-chart-3" class="w-4 h-4"></i>
-                            </button>
-                            {% if key.status == 'active' %}
-                            <button class="text-yellow-600 hover:text-yellow-900 p-1 rounded"
-                                    hx-post="/admin/api-keys/{{ key.id }}/suspend"
-                                    hx-target="#api-keys-table"
-                                    hx-confirm="Are you sure you want to suspend this API key?"
-                                    title="Suspend">
-                                <i data-lucide="pause" class="w-4 h-4"></i>
-                            </button>
-                            {% else %}
-                            <button class="text-green-600 hover:text-green-900 p-1 rounded"
-                                    hx-post="/admin/api-keys/{{ key.id }}/activate"
-                                    hx-target="#api-keys-table"
-                                    title="Activate">
-                                <i data-lucide="play" class="w-4 h-4"></i>
-                            </button>
-                            {% endif %}
-                            <button class="text-red-600 hover:text-red-900 p-1 rounded"
-                                    hx-delete="/admin/api-keys/{{ key.id }}"
-                                    hx-target="#api-keys-table"
-                                    hx-confirm="Are you sure you want to delete this API key? This action cannot be undone."
-                                    title="Delete">
-                                <i data-lucide="trash-2" class="w-4 h-4"></i>
-                            </button>
-                        </div>
-                    </td>
                 </tr>
                 {% endfor %}
             </tbody>
         </table>
-        
-        <!-- Pagination -->
-        <div class="bg-white px-4 py-3 flex items-center justify-between border-t border-gray-200 sm:px-6">
-            <div class="flex-1 flex justify-between sm:hidden">
-                <button class="relative inline-flex items-center px-4 py-2 border border-gray-300 text-sm font-medium rounded-md text-gray-700 bg-white hover:bg-gray-50">
-                    Previous
-                </button>
-                <button class="ml-3 relative inline-flex items-center px-4 py-2 border border-gray-300 text-sm font-medium rounded-md text-gray-700 bg-white hover:bg-gray-50">
-                    Next
-                </button>
-            </div>
-            <div class="hidden sm:flex-1 sm:flex sm:items-center sm:justify-between">
+    </div>
+
+    <!-- API Keys List -->
+    <div id="api-keys-table" 
+         hx-get="/admin/api-keys" 
+         hx-trigger="refresh from:body"
+         hx-select="#api-keys-table">
+        {% include 'api_keys_table.html' %}
+    </div>
+</div>
+
+<!-- Modal Container for Create Form -->
+<div id="modal-container"></div>
+{% endblock %}
                 <div>
                     <p class="text-sm text-gray-700">
                         Showing <span class="font-medium">1</span> to <span class="font-medium">10</span> of <span class="font-medium">21</span> results
