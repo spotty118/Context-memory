@@ -13,7 +13,7 @@ pydantic-settings==2.1.0
 
 # Supabase Integration
 supabase==2.7.4
-postgrest==0.13.2
+postgrest>=0.14,<0.17
 
 # Database and ORM (Keep minimal for compatibility)
 SQLAlchemy==2.0.23
