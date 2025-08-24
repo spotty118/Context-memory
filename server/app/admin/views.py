@@ -78,9 +78,9 @@ async def login_submit(request: Request, username: str = Form(...), password: st
             response.set_cookie(
                 key="admin_token",
                 value=token,
-                max_age=86400 * 7,  # 7 days
+                max_age=app_settings.JWT_EXPIRE_MINUTES * 60,
                 httponly=True,
-                secure=True,  # Always secure for production
+                secure=app_settings.is_production,  # Secure in production only
                 samesite="strict"  # Strict for better CSRF protection
             )
             return response

@@ -1,21 +1,19 @@
 """
 Main FastAPI application entry point for Context Memory + LLM Gateway.
 """
-import logging
-from contextlib import asynccontextmanager
-from typing import AsyncGenerator
-from datetime import datetime
-import uuid
+import asyncio
 import time
+import uuid
+from contextlib import asynccontextmanager
+from datetime import datetime
+from typing import AsyncGenerator
 
 from fastapi import FastAPI, Request, Response, HTTPException
+from fastapi.responses import RedirectResponse, JSONResponse
+from fastapi.staticfiles import StaticFiles
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.middleware.trustedhost import TrustedHostMiddleware
 from starlette.middleware.sessions import SessionMiddleware
-# CSRFMiddleware not available in starlette - using alternative approach
-# from starlette.middleware.csrf import CSRFMiddleware
-from fastapi.responses import JSONResponse, HTMLResponse, RedirectResponse
-from fastapi.staticfiles import StaticFiles
 import structlog
 import sentry_sdk
 from sentry_sdk.integrations.fastapi import FastApiIntegration
@@ -24,24 +22,26 @@ from sentry_sdk.integrations.sqlalchemy import SqlalchemyIntegration
 from app.core.config import settings
 from app.telemetry.logging import setup_logging
 from app.telemetry.otel import setup_telemetry
-from app.core.supabase import get_supabase
 from app.api import llm_gateway, models, ingest, recall, workingset, expand, feedback, health, workers, cache, benchmarks
 from app.api.v2 import enhanced_context
 from app.api.supabase_api_keys import router as supabase_api_keys_router
+from app.api.health_checks import router as health_checks_router
 # Legacy admin interface - keeping for compatibility
 from app.admin.views import router as admin_router
 from app.db.session import init_db
 from app.core.exceptions import ContextMemoryError
 from app.core.audit import log_security_event, SecurityEventType, SecurityRisk
 from app.core.versioning import (
-    create_version_middleware, create_version_endpoints, APIVersion,
-    version_registry, create_versioned_router
+    create_version_middleware, create_version_endpoints
 )
 from app.core.rate_limiting import rate_limit_middleware
 from app.core.middleware import (
     ResponseStandardizationMiddleware, SecurityHeadersMiddleware, 
     RequestLoggingMiddleware, CircuitBreakerMiddleware
 )
+from app.services.cache import ModelCacheService, SettingsCacheService
+from app.telemetry.metrics import setup_app_info, get_metrics_response
+from app.core.metrics_middleware import MetricsMiddleware, system_metrics_collector
 
 
 # Setup structured logging
@@ -76,13 +76,21 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
     
     # Warm cache with frequently accessed data
     try:
-        from app.services.cache import ModelCacheService, SettingsCacheService
         logger.info("warming_cache_on_startup")
-        await ModelCacheService.warm_cache(limit=50)  # Warm top 50 models
-        await SettingsCacheService.warm_cache()
+        cache_tasks = [
+            ModelCacheService.warm_cache(limit=50),  # Warm top 50 models
+            SettingsCacheService.warm_cache()
+        ]
+        await asyncio.gather(*cache_tasks)
         logger.info("cache_warmed_successfully")
-    except Exception as e:
+    except Exception:
         logger.exception("cache_warm_failed_on_startup")
+    
+    # Setup application metrics info
+    setup_app_info()
+    
+    # Start system metrics collection
+    await system_metrics_collector.start()
     
     logger.info("Application startup complete")
     
@@ -90,6 +98,9 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
     
     # Shutdown
     logger.info("Shutting down application")
+    
+    # Stop system metrics collection
+    await system_metrics_collector.stop()
 
 
 # Create FastAPI application
@@ -101,14 +112,17 @@ app = FastAPI(
     redoc_url="/redoc" if not settings.is_production else None,
     lifespan=lifespan,
 )
-# Note: ProxyHeadersMiddleware was removed in newer Starlette versions
-# Trust headers are now handled via uvicorn --forwarded-allow-ips or server config
 
 # Security middleware
 if settings.is_production:
+    # Configure with actual domains in production
+    allowed_hosts = getattr(settings, 'ALLOWED_HOSTS', None) or [
+        "api.yourdomain.com", 
+        "yourdomain.com"
+    ]
     app.add_middleware(
         TrustedHostMiddleware,
-        allowed_hosts=["*"]  # Configure with actual domains in production
+        allowed_hosts=allowed_hosts
     )
 
 # Session middleware (required for CSRF)
@@ -120,14 +134,6 @@ app.add_middleware(
     https_only=settings.is_production
 )
 
-# CSRF middleware for admin endpoints - temporarily disabled due to starlette compatibility
-# app.add_middleware(
-#     CSRFMiddleware,
-#     secret_key=settings.SECRET_KEY,
-#     exempt_urls=["/health", "/api/v1", "/api/v2", "/docs", "/redoc"],  # Exempt API endpoints
-#     cookie_secure=settings.is_production,
-#     cookie_samesite="strict"
-# )
 
 # CORS middleware
 cors_origins = settings.CORS_ORIGINS if getattr(settings, "CORS_ORIGINS", []) else (["*"] if settings.is_development else [])
@@ -144,6 +150,7 @@ app.add_middleware(RequestLoggingMiddleware)
 app.add_middleware(SecurityHeadersMiddleware) 
 app.add_middleware(ResponseStandardizationMiddleware)
 app.add_middleware(CircuitBreakerMiddleware)
+app.add_middleware(MetricsMiddleware)
 
 # API Versioning Middleware
 app.middleware("http")(create_version_middleware())
@@ -357,7 +364,6 @@ async def http_exception_handler(request: Request, exc: HTTPException):
     # Generate request ID if not present
     request_id = getattr(request.state, "request_id", None)
     if not request_id:
-        import uuid
         request_id = str(uuid.uuid4())
     
     logger.warning(
@@ -389,18 +395,21 @@ async def http_exception_handler(request: Request, exc: HTTPException):
 @app.exception_handler(Exception)
 async def global_exception_handler(request: Request, exc: Exception):
     """Global exception handler with structured logging and standardized responses."""
-    logger.error(
-        "unhandled_exception",
-        exception=str(exc),
-        exception_type=type(exc).__name__,
-        url=str(request.url),
-        method=request.method,
-    )
+    # Don't log HTTPExceptions (they're handled elsewhere) or validation errors
+    if not isinstance(exc, (HTTPException, ValueError)):
+        logger.exception(
+            "unhandled_exception",
+            exception=str(exc),
+            exception_type=type(exc).__name__,
+            url=str(request.url),
+            method=request.method,
+            user_agent=request.headers.get("user-agent", ""),
+            correlation_id=getattr(request.state, "correlation_id", None),
+        )
     
     # Generate request ID if not present
     request_id = getattr(request.state, "request_id", None)
     if not request_id:
-        import uuid
         request_id = str(uuid.uuid4())
     
     # Standardized error response
@@ -434,6 +443,7 @@ app.include_router(create_version_endpoints(), prefix="/api", tags=["API Version
 
 # Health endpoints (version-independent)
 app.include_router(health.router, prefix="", tags=["Health"])
+app.include_router(health_checks_router, prefix="", tags=["Health Checks"])
 
 # V2 API Routes (Primary)
 app.include_router(enhanced_context.router, prefix="", tags=["Enhanced Context Memory v2"])
@@ -457,6 +467,12 @@ app.include_router(supabase_contexts_router, prefix="/v1")
 
 # Admin interface - legacy (keeping for compatibility)
 app.include_router(admin_router, prefix="/admin", tags=["Admin"])
+
+# Metrics endpoint for Prometheus monitoring
+@app.get("/metrics", include_in_schema=False)
+async def prometheus_metrics():
+    """Prometheus metrics endpoint for monitoring and alerting."""
+    return get_metrics_response()
 
 # Static files for admin interface
 try:
