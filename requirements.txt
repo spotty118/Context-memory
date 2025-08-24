@@ -11,15 +11,15 @@ python-multipart==0.0.6
 pydantic==2.5.0
 pydantic-settings==2.1.0
 
-# Database and ORM
+# Supabase Integration
+supabase==2.7.4
+postgrest==0.13.2
+
+# Database and ORM (Keep minimal for compatibility)
 SQLAlchemy==2.0.23
-asyncpg==0.29.0
-psycopg2-binary==2.9.9
-alembic==1.13.1
-pgvector==0.2.4
 greenlet>=1.1.0
 
-# Cache and Queue
+# Cache and Queue (Keep Redis for now)
 redis==5.0.1
 rq==1.15.1
 rq-scheduler==0.13.1

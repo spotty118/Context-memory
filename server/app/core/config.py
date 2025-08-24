@@ -27,13 +27,17 @@ class Settings(BaseSettings):
         default="development", description="Environment"
     )
     
-    # Database Configuration
-    DATABASE_URL: str = Field(
-        default="postgresql://user:pass@localhost/db",
-        description="PostgreSQL database URL with asyncpg driver"
-    )
-    DATABASE_POOL_SIZE: int = Field(default=10, description="Database connection pool size")
-    DATABASE_MAX_OVERFLOW: int = Field(default=20, description="Database max overflow connections")
+    # Database Configuration (Legacy - kept for compatibility)
+    DATABASE_URL: str = Field(default="postgresql://admin:admin@localhost:5432/contextmemory")
+    DATABASE_POOL_SIZE: int = Field(default=20)
+    DATABASE_MAX_OVERFLOW: int = Field(default=50)
+    DATABASE_POOL_TIMEOUT: int = Field(default=30)
+    DATABASE_POOL_RECYCLE: int = Field(default=3600)
+    
+    # Supabase Configuration
+    SUPABASE_URL: str = Field(default="", description="Supabase project URL")
+    SUPABASE_ANON_KEY: str = Field(default="", description="Supabase anon/public key")
+    SUPABASE_SERVICE_ROLE_KEY: str = Field(default="", description="Supabase service role key for admin operations")
     
     # Fix CORS_ORIGINS to handle comma-separated strings from .env
     CORS_ORIGINS: Union[str, List[str]] = Field(default="", description="Allowed CORS origins")

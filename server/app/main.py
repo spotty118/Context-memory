@@ -24,9 +24,11 @@ from sentry_sdk.integrations.sqlalchemy import SqlalchemyIntegration
 from app.core.config import settings
 from app.telemetry.logging import setup_logging
 from app.telemetry.otel import setup_telemetry
-from app.db.session import init_db
+from app.core.supabase import get_supabase
 from app.api import llm_gateway, models, ingest, recall, workingset, expand, feedback, health, workers, cache, benchmarks
 from app.api.v2 import enhanced_context
+from app.api.supabase_api_keys import router as supabase_api_keys_router
+# Legacy admin interface - keeping for compatibility
 from app.admin.views import router as admin_router
 from app.core.exceptions import ContextMemoryError
 from app.core.audit import log_security_event, SecurityEventType, SecurityRisk
@@ -447,7 +449,12 @@ app.include_router(workers.router, prefix="/v1", tags=["Workers v1 (Legacy)"])
 app.include_router(cache.router, prefix="/v1", tags=["Cache v1 (Legacy)"])
 app.include_router(benchmarks.router, prefix="/v1", tags=["Benchmarks v1 (Legacy)"])
 
-# Admin interface (version-independent)
+# Supabase-based API endpoints
+from app.api.supabase_contexts import router as supabase_contexts_router
+app.include_router(supabase_api_keys_router, prefix="/v1")
+app.include_router(supabase_contexts_router, prefix="/v1")
+
+# Admin interface - legacy (keeping for compatibility)
 app.include_router(admin_router, prefix="/admin", tags=["Admin"])
 
 # Static files for admin interface
